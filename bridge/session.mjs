@@ -14,6 +14,21 @@ const CHROME_CANDIDATES = [
   "/usr/bin/google-chrome",
 ];
 
+export const COMPOSER_SELECTOR = 'textarea, [contenteditable="true"]';
+export const BUSY_TEXTS = ["is working"];
+
+/**
+ * @param {{ headless?: boolean }} [opts]
+ */
+export function launchOptions({ headless = true } = {}) {
+  return {
+    channel: "chrome",
+    headless,
+    locale: "en-US",
+    args: ["--lang=en-US"],
+  };
+}
+
 /** @returns {string | null} */
 export function chromeExecutable() {
   return CHROME_CANDIDATES.find((p) => fs.existsSync(p)) ?? null;
@@ -62,7 +77,7 @@ async function waitSignedInSignals(page, timeoutMs) {
   try {
     await Promise.any([
       page.locator("[data-testid=hatch-nav-chat]").waitFor({ timeout: timeoutMs }),
-      page.getByRole("textbox", { name: "Message" }).waitFor({ timeout: timeoutMs }),
+      page.locator(COMPOSER_SELECTOR).waitFor({ timeout: timeoutMs }),
     ]);
     return true;
   } catch {
@@ -75,7 +90,7 @@ async function waitSignedInSignals(page, timeoutMs) {
  */
 async function pageIsBusy(page) {
   const text = await page.locator("body").innerText().catch(() => "");
-  return text.includes("is working");
+  return BUSY_TEXTS.some((snippet) => text.includes(snippet));
 }
 
 /**
@@ -104,10 +119,7 @@ async function readChatListRecord(page) {
 export async function openSession({ accountId = "default", headless = true } = {}) {
   const userDataDir = profileDir(accountId);
   fs.mkdirSync(userDataDir, { recursive: true });
-  const context = await chromium.launchPersistentContext(userDataDir, {
-    channel: "chrome",
-    headless,
-  });
+  const context = await chromium.launchPersistentContext(userDataDir, launchOptions({ headless }));
   const page = context.pages()[0] ?? (await context.newPage());
 
   async function isSignedIn() {
@@ -146,7 +158,7 @@ export async function openSession({ accountId = "default", headless = true } = {
   async function send({ chatId, text, onDelta, timeoutMs = 180_000, isCancelled }) {
     const target = chatId ? `${MUSE_ORIGIN}/thread/${chatId}` : `${MUSE_ORIGIN}/thread/new`;
     await page.goto(target, { waitUntil: "domcontentloaded" });
-    const box = page.getByRole("textbox", { name: "Message" });
+    const box = page.locator(COMPOSER_SELECTOR);
     await box.waitFor({ timeout: SIGN_IN_MS });
     await box.click();
     const sentAfterIso = new Date().toISOString();
