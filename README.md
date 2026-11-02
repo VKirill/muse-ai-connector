@@ -57,7 +57,7 @@ muse-acp                          # ACP agent on stdio (BB launches this)
 
 ## Limits
 
-This is a UI-driven connector. It breaks when Muse changes its page or the `hatch-chat-cache` schema (schemaVersion 4 is checked; a mismatch is a clear error). One Chrome profile per account; accounts can run in parallel, one prompt at a time per account. Google Chrome is required (`channel: "chrome"`). Headless is the default for chats; add-account always opens a visible window.
+This is a UI-driven connector. It breaks when Muse changes its page or the `hatch-chat-cache` schema (schemaVersion 4 is checked; a mismatch is a clear error). One Chrome profile per account; accounts can run in parallel, one prompt at a time per account. Google Chrome is required (`channel: "chrome"`). Headless is the default for chats; add-account always opens a visible window. Muse has no reasoning knob: BB reasoning levels (`none` / `low` / `medium` / `high`) are accepted so the composer does not fail, and the agent ignores them.
 
 ## По-русски
 
@@ -69,4 +69,4 @@ This is a UI-driven connector. It breaks when Muse changes its page or the `hatc
 
 **CLI:** `musebridge doctor`, `accounts list|add|check|remove`, `chats`, `history`, `send`, `login`. У `list --json` есть поле `locked`.
 
-**Ограничения:** управление через интерфейс сайта; смена вёрстки Muse или схемы кэша (проверяется schemaVersion 4) ломает шаг. Один профиль Chrome на аккаунт; параллельно несколько аккаунтов, но один запрос на аккаунт. Нужен Google Chrome.
+**Ограничения:** управление через интерфейс сайта; смена вёрстки Muse или схемы кэша (проверяется schemaVersion 4) ломает шаг. Один профиль Chrome на аккаунт; параллельно несколько аккаунтов, но один запрос на аккаунт. Нужен Google Chrome. У Muse нет переключателя рассуждения: уровни BB принимаются, чтобы композитор не падал, и агент их игнорирует.
