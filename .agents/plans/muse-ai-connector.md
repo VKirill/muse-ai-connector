@@ -47,12 +47,14 @@ server.ts / host.ts / app.tsx: BB plugin (provider "Muse", settings + accounts s
 3. `muse-acp-provider` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `12e694a`) — `muse-acp` ACP agent over stdio + provider "Muse" registered in BB, streaming into BB chat.
 4. `muse-settings-ui` — **done** 2026-11-02 (as `muse-settings-ui.2`), run `lprun_adae76e942f24d348acd60f06532e40c` (merge `2c4377e`) — settings/status screen EN+RU (Pokecut), README EN+RU.
 5. `muse-locale-fix.2` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `a965318`) — Chrome launches force `en-US`, language-independent `COMPOSER_SELECTOR`, exported `BUSY_TEXTS`; fixes the live send failure on a Russian-locale profile (found during the live smoke).
+6. `muse-provider-models` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `d1852a4`) — ACP `session/new` advertises `muse-spark` and `session/set_model` is accepted; provider accepts BB reasoning levels `none–high` (fixes HTTP 400 on new Muse chats); plugin 0.1.1.
 
 ## History
 ### 2026-11-02
 - Run `lprun_adae76e942f24d348acd60f06532e40c` shipped all four build tasks: `muse-account-pool.2` (merge `1a104bc`), `muse-acp-provider` (merge `12e694a`), `muse-settings-ui.2` (merge `2c4377e`); `muse-bridge-core` landed earlier in the same run (`ee1809f`). `npm test` green (26 pass) + `tsc --noEmit` clean at merge head `2c4377e`.
 - Still open (not code): owner live smoke (sign-in + real send), public repo `VKirill/muse-ai-connector`, `gitnexus analyze`, hub install, registry + journal entry.
 - Live smoke surfaced a locale bug (Russian profile: composer labelled `Сообщение`, send timed out) → `muse-locale-fix.2` merged (`a965318`): `launchOptions()` forces `en-US`, `COMPOSER_SELECTOR` replaces the role/name locator, `BUSY_TEXTS` exported (kept English-only — the UI is forced to en-US). `npm test` green (30 pass) + `tsc --noEmit` clean at merge head `a965318`. Live re-send still pending.
+- A fresh BB chat on provider Muse failed with HTTP 400 ("does not support medium reasoning level") → `muse-provider-models` merged (`d1852a4`): `session/new` returns the `muse-spark` models block, `session/set_model` accepted, `server.ts` declares reasoning levels `none–high` (Muse ignores the knob — README Limits says so); version 0.1.1. `npm test` green (31 pass) + `tsc --noEmit` clean at merge head `d1852a4`. Live re-check still pending.
 
 ## Limits (say them in README)
 UI-driven: breaks when Muse changes its page or cache schema (schemaVersion 4 checked, a mismatch is a clear error).
