@@ -1,5 +1,49 @@
 import type { BbPluginApi, JsonValue, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
+import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+
+const accountRow = z.object({
+  id: z.string(),
+  label: z.string(),
+  status: z.enum(["signed_in", "signed_out", "unknown"]),
+  locked: z.boolean(),
+  lastUsedAt: z.string(),
+  lastCheckedAt: z.string(),
+});
+
+const hostStatus = z.object({
+  platform: z.string(),
+  chromeFound: z.boolean(),
+  chromePath: z.string().nullable(),
+  bridgeFound: z.boolean(),
+  bridgeVersion: z.string().nullable(),
+  agentFound: z.boolean(),
+  accounts: z.array(accountRow),
+  problems: z.array(z.string()),
+});
+
+const hostEntry = z.object({
+  hostId: z.string(),
+  name: z.string(),
+  connected: z.boolean(),
+  status: hostStatus.nullable(),
+  error: z.string().nullable(),
+});
+export type HostEntry = z.infer<typeof hostEntry>;
+
+const hostContract = defineRpcContract({
+  status: { input: z.object({}).strict(), output: hostStatus, experimental_retryable: true },
+  addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
+  checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
+  removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
+});
+
+export const rpcContract = defineRpcContract({
+  hosts: { input: z.object({ hostId: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  addAccount: { input: z.object({ hostId: z.string(), label: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  checkAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  removeAccount: { input: z.object({ hostId: z.string(), id: z.string(), purge: z.boolean() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+});
 
 export const MUSE_PROVIDER_ID = "muse";
 export const MUSE_AGENT_COMMAND = "muse-acp";
@@ -28,6 +72,7 @@ const SETTINGS = {
 
 export default function plugin(bb: BbPluginApi): void {
   const settings = bb.settings.define(SETTINGS);
+  const host = bb.hosts.experimental_client({ contract: hostContract });
 
   const agentEnv = (v: Record<string, string | number | boolean | undefined>) => ({
     MUSE_HEADLESS: v.headless === false ? "0" : "1",
@@ -91,5 +136,51 @@ export default function plugin(bb: BbPluginApi): void {
   bb.providers.experimental_contributeEnv(MUSE_PROVIDER_ID, async () => {
     const env = agentEnv(await settings.get());
     return Object.entries(env).map(([name, value]) => ({ name, value, reason: "Muse provider setting" }));
+  });
+
+  async function oneHost(hostId: string, call: (id: string) => Promise<z.infer<typeof hostStatus>>): Promise<{ hosts: HostEntry[] }> {
+    const listed = await bb.sdk.hosts.list();
+    const row = listed.find((h) => h.id === hostId);
+    if (!row) return { hosts: [] };
+    const connected = row.status === "connected";
+    const name = row.name || row.id;
+    if (!connected) return { hosts: [{ hostId: row.id, name, connected, status: null, error: null }] };
+    try {
+      const status = await call(row.id);
+      return { hosts: [{ hostId: row.id, name, connected, status, error: null }] };
+    } catch (e) {
+      return { hosts: [{ hostId: row.id, name, connected, status: null, error: e instanceof Error ? e.message : String(e) }] };
+    }
+  }
+
+  bb.rpc.register(rpcContract, {
+    async hosts({ hostId }) {
+      const listed = await bb.sdk.hosts.list();
+      const rows = listed.filter((h) => !hostId || h.id === hostId);
+      const hosts: HostEntry[] = await Promise.all(
+        rows.map(async (h): Promise<HostEntry> => {
+          const connected = h.status === "connected";
+          const name = h.name || h.id;
+          if (!connected) return { hostId: h.id, name, connected, status: null, error: null };
+          try {
+            const status = await host.call("status", {}, { hostId: h.id });
+            return { hostId: h.id, name, connected, status, error: null };
+          } catch (e) {
+            return { hostId: h.id, name, connected, status: null, error: e instanceof Error ? e.message : String(e) };
+          }
+        }),
+      );
+      hosts.sort((a, b) => Number(b.status?.chromeFound ?? false) - Number(a.status?.chromeFound ?? false));
+      return { hosts };
+    },
+    addAccount({ hostId, label }) {
+      return oneHost(hostId, (id) => host.call("addAccount", { label }, { hostId: id }));
+    },
+    checkAccounts({ hostId, id }) {
+      return oneHost(hostId, (hid) => host.call("checkAccounts", id ? { id } : {}, { hostId: hid }));
+    },
+    removeAccount({ hostId, id, purge }) {
+      return oneHost(hostId, (hid) => host.call("removeAccount", { id, purge }, { hostId: hid }));
+    },
   });
 }

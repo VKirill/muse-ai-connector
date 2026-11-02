@@ -1,0 +1,223 @@
+/*
+ * Pokecut plugin kit for the Muse settings screen.
+ * Tokens read --pk-* with BB palette fallbacks. No raw colour literals.
+ */
+
+[data-bb-plugin="muse"],
+[data-bb-plugin-root]:not([data-bb-plugin]) {
+  --muse-well: var(--pk-well, color-mix(in oklab, var(--muted) 45%, var(--card)));
+  --muse-card: var(--pk-card, var(--card));
+  --muse-outline: var(--pk-outline, var(--input));
+  --muse-hairline: var(--pk-hairline, var(--border));
+  --muse-drop: var(--pk-drop, 0 1px 2px rgb(0 0 0 / 0.06));
+  --muse-card-drop: var(--pk-card-drop, none);
+  --muse-raise: 0 1px 3px 0 rgb(0 0 0 / 0.12);
+  --muse-accent: var(--pk-accent-gradient, linear-gradient(var(--primary), var(--primary)));
+  --muse-accent-edge: var(--pk-accent-edge, none);
+  --muse-on-accent: var(--pk-on-accent, var(--primary-foreground));
+  --muse-success: var(--pk-success, var(--success));
+  --muse-success-text: var(--pk-success-text, var(--success));
+  --muse-info: var(--pk-info, var(--primary));
+  --muse-warning: var(--pk-warning, var(--warning));
+  --muse-warning-text: var(--pk-warning-text, var(--warning));
+  --muse-danger-text: var(--pk-danger-text, var(--destructive));
+}
+
+@layer components {
+  .muse-panel {
+    min-width: 0;
+    max-width: 100%;
+    padding: 4px;
+    border: 1px solid var(--muse-hairline);
+    border-radius: 16px;
+    background-color: var(--muse-well);
+    box-shadow: var(--muse-card-drop);
+  }
+
+  .muse-panel-head {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .muse-panel-body {
+    min-width: 0;
+    max-width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 12px;
+    border: 1px solid var(--muse-hairline);
+    border-radius: 12px;
+    background-color: var(--muse-card);
+    box-shadow: var(--muse-drop);
+  }
+
+  .muse-card {
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--muse-hairline);
+    border-radius: 14px;
+    background-color: var(--muse-card);
+    box-shadow: var(--muse-drop);
+  }
+
+  .muse-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 2px 0;
+    font-size: 13px;
+  }
+
+  .muse-row-label {
+    color: var(--muted-foreground);
+  }
+
+  .muse-muted {
+    color: var(--muted-foreground);
+    font-size: 13px;
+  }
+
+  .muse-error {
+    color: var(--muse-danger-text);
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+
+  .muse-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .muse-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .muse-input {
+    min-width: 0;
+    flex: 1 1 12rem;
+    padding: 6px 10px;
+    border: 1px solid var(--muse-outline);
+    border-radius: 8px;
+    background-color: var(--muse-card);
+    box-shadow: var(--muse-drop);
+    color: var(--foreground);
+    font-size: 13px;
+  }
+
+  .muse-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border: 1px solid var(--muse-outline);
+    border-radius: 8px;
+    background-color: var(--muse-card);
+    box-shadow: var(--muse-drop);
+    color: var(--foreground);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .muse-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.5;
+  }
+
+  .muse-btn-accent {
+    border-color: transparent;
+    background-color: var(--primary);
+    background-image: var(--muse-accent);
+    box-shadow: var(--muse-accent-edge);
+    color: var(--muse-on-accent);
+  }
+
+  .muse-btn-accent:hover:not(:disabled) {
+    filter: brightness(1.05) saturate(1.05);
+  }
+
+  .muse-check {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+
+  .muse-account {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 0;
+    border-top: 1px solid var(--muse-hairline);
+  }
+
+  .muse-account:first-of-type {
+    border-top: none;
+    padding-top: 0;
+  }
+
+  .muse-account-meta {
+    display: flex;
+    min-width: 0;
+    flex: 1 1 12rem;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .muse-account-name {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .muse-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .muse-pill-success {
+    background-color: color-mix(in oklab, var(--muse-success) 14%, transparent);
+    color: var(--muse-success-text);
+  }
+
+  .muse-pill-info {
+    background-color: color-mix(in oklab, var(--muse-info) 13%, transparent);
+    color: var(--muse-info);
+  }
+
+  .muse-pill-warning {
+    background-color: color-mix(in oklab, var(--muse-warning) 16%, transparent);
+    color: var(--muse-warning-text);
+  }
+
+  .muse-pill-muted {
+    background-color: color-mix(in oklab, var(--foreground) 7%, transparent);
+    color: var(--foreground);
+  }
+
+  .muse-text-danger {
+    color: var(--muse-danger-text);
+  }
+}

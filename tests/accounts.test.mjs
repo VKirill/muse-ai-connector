@@ -157,3 +157,23 @@ test("musebridge accounts list --json with an empty home prints an array and exi
   assert.equal(stderr, "");
   assert.deepEqual(JSON.parse(stdout), []);
 });
+
+test("musebridge accounts list --json includes locked false for a free account", async () => {
+  const dir = fs.mkdtempSync("/tmp/muse-acc-");
+  const prev = process.env.MUSE_BRIDGE_HOME;
+  process.env.MUSE_BRIDGE_HOME = dir;
+  try {
+    addAccount("Work");
+    const { stdout, stderr } = await execFileP(process.execPath, [cli, "accounts", "list", "--json"], {
+      encoding: "utf8",
+      env: { ...process.env, MUSE_BRIDGE_HOME: dir },
+    });
+    assert.equal(stderr, "");
+    const listed = JSON.parse(stdout);
+    assert.equal(listed.length, 1);
+    assert.equal(listed[0].locked, false);
+  } finally {
+    if (prev === undefined) delete process.env.MUSE_BRIDGE_HOME;
+    else process.env.MUSE_BRIDGE_HOME = prev;
+  }
+});
