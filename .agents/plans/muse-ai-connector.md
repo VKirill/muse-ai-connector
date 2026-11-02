@@ -43,11 +43,16 @@ server.ts / host.ts / app.tsx: BB plugin (provider "Muse", settings + accounts s
 
 ## Tasks
 1. `muse-bridge-core` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `ee1809f`) — package, session driver, cache parser, CLI for one account.
-2. `muse-account-pool` — several accounts, sign-in window, pick + lock, status.
-3. `muse-acp-provider` — ACP agent + BB plugin provider registration, streaming.
-4. `muse-settings-ui` — settings/status screen EN+RU, Pokecut, README.
+2. `muse-account-pool` — **done** 2026-11-02 (as `muse-account-pool.2`), run `lprun_adae76e942f24d348acd60f06532e40c` (merge `1a104bc`) — accounts.json registry, locks, pick, `accounts add|list|remove|check` with the Chrome sign-in window.
+3. `muse-acp-provider` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `12e694a`) — `muse-acp` ACP agent over stdio + provider "Muse" registered in BB, streaming into BB chat.
+4. `muse-settings-ui` — **done** 2026-11-02 (as `muse-settings-ui.2`), run `lprun_adae76e942f24d348acd60f06532e40c` (merge `2c4377e`) — settings/status screen EN+RU (Pokecut), README EN+RU.
+5. `muse-locale-fix.2` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `a965318`) — Chrome launches force `en-US`, language-independent `COMPOSER_SELECTOR`, exported `BUSY_TEXTS`; fixes the live send failure on a Russian-locale profile (found during the live smoke).
 
-Then: public repo `VKirill/muse-ai-connector`, `gitnexus analyze`, install on the hub, registry + journal.
+## History
+### 2026-11-02
+- Run `lprun_adae76e942f24d348acd60f06532e40c` shipped all four build tasks: `muse-account-pool.2` (merge `1a104bc`), `muse-acp-provider` (merge `12e694a`), `muse-settings-ui.2` (merge `2c4377e`); `muse-bridge-core` landed earlier in the same run (`ee1809f`). `npm test` green (26 pass) + `tsc --noEmit` clean at merge head `2c4377e`.
+- Still open (not code): owner live smoke (sign-in + real send), public repo `VKirill/muse-ai-connector`, `gitnexus analyze`, hub install, registry + journal entry.
+- Live smoke surfaced a locale bug (Russian profile: composer labelled `Сообщение`, send timed out) → `muse-locale-fix.2` merged (`a965318`): `launchOptions()` forces `en-US`, `COMPOSER_SELECTOR` replaces the role/name locator, `BUSY_TEXTS` exported (kept English-only — the UI is forced to en-US). `npm test` green (30 pass) + `tsc --noEmit` clean at merge head `a965318`. Live re-send still pending.
 
 ## Limits (say them in README)
 UI-driven: breaks when Muse changes its page or cache schema (schemaVersion 4 checked, a mismatch is a clear error).

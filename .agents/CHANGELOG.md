@@ -1,3 +1,5 @@
 # Changelog
 
 - 2026-11-02 lprun_adae76e942f24d348acd60f06532e40c: Muse bridge core landed — Node bridge that drives muse.ai in a persistent Chrome profile: session driver, IndexedDB cache parser, reply-state machine and the `musebridge` CLI, with 10 green fixture tests (muse-bridge-core; commit: see git log)
+- 2026-11-02 lprun_adae76e942f24d348acd60f06532e40c: Muse became a BB provider end to end — account pool (registry, Chrome sign-in window, pick and lock), `muse-acp` agent streaming replies into BB chats, and a settings screen with account management in EN+RU plus a README; 26 tests green (muse-account-pool.2, muse-acp-provider, muse-settings-ui.2; commit: see git log)
+- 2026-11-02 lprun_adae76e942f24d348acd60f06532e40c: Bridge fixed for non-English Chrome profiles — `launchOptions()` forces Chrome locale `en-US`, the composer is matched by the language-independent `COMPOSER_SELECTOR` instead of the English role/name locator, busy text moved to an exported `BUSY_TEXTS` list with new session-options tests; 30 tests green (muse-locale-fix.2; commit: see git log)
