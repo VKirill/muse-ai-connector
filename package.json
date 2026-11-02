@@ -1,0 +1,20 @@
+{
+  "name": "bb-plugin-muse",
+  "version": "0.1.0",
+  "description": "Muse as a BB provider: drive the Muse web app from a persistent Chrome profile.",
+  "license": "Apache-2.0",
+  "author": "Kirill Vechkasov",
+  "type": "module",
+  "bin": {
+    "musebridge": "bin/musebridge.mjs"
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "playwright-core": "^1.56.1"
+  }
+}

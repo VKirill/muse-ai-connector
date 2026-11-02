@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-bridge-core",
+  "task_sha256": "2eb3ac5403aff7b3b872c5682b62f20af75fc7776959febf0b81b75b5e64ee68",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "06599ab7efd9c61c5d3ac99eaaed44b3e16f1b34f0857f1e12ee202d011174d0",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-02T22:30:28.318Z",
+  "model": "grok-4.6"
+}
