@@ -112,8 +112,14 @@ export default function plugin(bb: BbPluginApi): void {
           id: "muse-spark",
           displayName: "Muse Spark",
           description: "Meta Muse personal assistant.",
-          supportedReasoningEfforts: [{ reasoningEffort: "none", description: "Standard" }],
-          defaultReasoningEffort: "none",
+          // Muse has no reasoning knob; BB levels are accepted and ignored by the agent.
+          supportedReasoningEfforts: [
+            { reasoningEffort: "none", description: "Standard" },
+            { reasoningEffort: "low", description: "Low" },
+            { reasoningEffort: "medium", description: "Medium" },
+            { reasoningEffort: "high", description: "High" },
+          ],
+          defaultReasoningEffort: "medium",
           isDefault: true,
         },
       ],
@@ -127,9 +133,14 @@ export default function plugin(bb: BbPluginApi): void {
       supportsThreadRename: false,
       fork: "none",
       permissionModes: ["accept-edits", "full"],
-      reasoningLevels: ["none"],
+      reasoningLevels: ["none", "low", "medium", "high"],
     },
-    reasoningLevels: [{ id: "none", label: "Standard" }],
+    reasoningLevels: [
+      { id: "none", label: "Standard" },
+      { id: "low", label: "Low" },
+      { id: "medium", label: "Medium" },
+      { id: "high", label: "High" },
+    ],
     composerActions: [],
   });
 

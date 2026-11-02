@@ -92,9 +92,32 @@ test("fake initialize, session/new, session/prompt streams PONG and ends the tur
   try {
     await agent.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
     const created = await agent.request("session/new", { cwd: "/tmp" });
+    assert.equal(created.models.currentModelId, "muse-spark");
+    assert.ok(created.models.availableModels.some((m) => m.modelId === "muse-spark"));
     const result = await prompt(agent, created.sessionId, "Reply with PONG");
     assert.equal(chunkText(agent.updates), "PONG");
     assert.deepEqual(result, { stopReason: "end_turn" });
+  } finally {
+    agent.close();
+  }
+});
+
+test("session/new advertises muse-spark and session/set_model accepts it", async () => {
+  const home = seedHome();
+  const agent = startAgent({ MUSE_BRIDGE_FAKE: "1", MUSE_BRIDGE_HOME: home });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: {} });
+    const created = await agent.request("session/new", { cwd: "/tmp" });
+    assert.deepEqual(created.models, {
+      currentModelId: "muse-spark",
+      availableModels: [{ modelId: "muse-spark", name: "Muse Spark" }],
+    });
+    const set = await agent.request("session/set_model", { sessionId: created.sessionId, modelId: "muse-spark" });
+    assert.deepEqual(set, {});
+    await assert.rejects(
+      () => agent.request("session/set_model", { sessionId: created.sessionId, modelId: "unknown" }),
+      (err) => err.code === -32602,
+    );
   } finally {
     agent.close();
   }
@@ -106,6 +129,8 @@ test("a second prompt in the same session reuses accountId and Muse chat id from
   try {
     await agent.request("initialize", { protocolVersion: 1 });
     const created = await agent.request("session/new", { cwd: "/tmp" });
+    assert.equal(created.models.currentModelId, "muse-spark");
+    assert.ok(created.models.availableModels.some((m) => m.modelId === "muse-spark"));
     await prompt(agent, created.sessionId, "first");
     const first = JSON.parse(fs.readFileSync(path.join(home, "sessions.json"), "utf8"))[created.sessionId];
     assert.equal(first.accountId, "work");

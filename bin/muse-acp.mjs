@@ -10,6 +10,8 @@ const FAKE = process.env.MUSE_BRIDGE_FAKE === "1";
 const LOCK_WAIT_MS = 5 * 60_000;
 const HEADLESS = process.env.MUSE_HEADLESS !== "0" && process.env.MUSE_HEADLESS !== "false";
 const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC || 180)) * 1000;
+const MUSE_MODEL_ID = "muse-spark";
+const MUSE_MODEL_NAME = "Muse Spark";
 
 /** @type {Map<string, { id: string, accountId: string | null, museChatId: string | null, cancelled: boolean }>} */
 const sessions = new Map();
@@ -100,6 +102,13 @@ function getSession(sessionId) {
   return restored;
 }
 
+function modelsBlock() {
+  return {
+    currentModelId: MUSE_MODEL_ID,
+    availableModels: [{ modelId: MUSE_MODEL_ID, name: MUSE_MODEL_NAME }],
+  };
+}
+
 async function waitForLock(accountId, session) {
   const deadline = Date.now() + LOCK_WAIT_MS;
   while (Date.now() < deadline) {
@@ -179,7 +188,12 @@ async function handle(method, params) {
       const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cancelled: false };
       sessions.set(session.id, session);
       saveSession(session);
-      return { sessionId: session.id };
+      return { sessionId: session.id, models: modelsBlock() };
+    }
+    case "session/set_model": {
+      getSession(params.sessionId);
+      if (params.modelId !== MUSE_MODEL_ID) throw codedError(-32602, `unknown model: ${params.modelId}`);
+      return {};
     }
     case "session/prompt":
       return runPrompt(getSession(params.sessionId), params);
