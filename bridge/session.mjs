@@ -141,9 +141,9 @@ export async function openSession({ accountId = "default", headless = true } = {
   }
 
   /**
-   * @param {{ chatId?: string, text: string, onDelta?: (suffix: string) => void, timeoutMs?: number }} input
+   * @param {{ chatId?: string, text: string, onDelta?: (suffix: string) => void, timeoutMs?: number, isCancelled?: () => boolean }} input
    */
-  async function send({ chatId, text, onDelta, timeoutMs = 180_000 }) {
+  async function send({ chatId, text, onDelta, timeoutMs = 180_000, isCancelled }) {
     const target = chatId ? `${MUSE_ORIGIN}/thread/${chatId}` : `${MUSE_ORIGIN}/thread/new`;
     await page.goto(target, { waitUntil: "domcontentloaded" });
     const box = page.getByRole("textbox", { name: "Message" });
@@ -159,6 +159,11 @@ export async function openSession({ accountId = "default", headless = true } = {
     let userMessageId = null;
 
     while (Date.now() < deadline) {
+      if (isCancelled?.()) {
+        const err = new Error("cancelled");
+        err.code = "cancelled";
+        throw err;
+      }
       if (!resolvedChatId) {
         const match = page.url().match(/\/thread\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
         if (match) resolvedChatId = match[1];
