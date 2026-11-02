@@ -31,3 +31,16 @@ write a plan, implement a formed task, and leave results in a folder the connect
 
 ## Steps that need the owner's word (ask once for the whole plan)
 Creating the OS account / container, enabling Remote Login for it, adding Muse's key, creating deploy keys.
+
+## Muse as a coding writer (owner question 2026-11-03)
+Goal: Muse takes a formed task (like a Lane Pilot writer), works autonomously on code, result lands through the usual checks.
+
+- **Route B (preferred): git drop box over Tailscale.** The sandbox account holds only bare repos (`/…/muse/repos/<project>.git`).
+  Per task the connector pushes the base commit there as `base/<task>`; Muse (in its own VM, with its own tools) clones from the
+  drop box, works, commits, pushes `muse/<task>`. `muse-acp` then fetches `muse/<task>` from the drop box into the BB/Lane Pilot
+  worktree (the session `cwd`) and fast-forwards it; Lane Pilot's verification, critique and merge run unchanged. Muse never sees our worktrees.
+  SSH for Muse limited to `git-shell` in that account (`command="git-shell -c \"$SSH_ORIGINAL_COMMAND\"",from="100.100.68.99",restrict`).
+- **Route A (no Tailscale): tool loop over chat.** `muse-acp` asks Muse to answer with structured tool calls (read/write/run),
+  executes them through the ACP client's fs/terminal methods inside the worktree under BB's permission mode, and sends results back.
+  Safe but ~10 s per step; use only if Route B is refused.
+- Trial: low-risk tasks first; `lane_pilot_memory routing_stats` decides if Muse earns medium-risk tasks. Writer chain/provider choice is the owner's Lane Pilot setting.
