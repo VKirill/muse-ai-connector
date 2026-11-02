@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-deepswe-kit",
+  "task_sha256": "3d92ca7bc9243f126a4f5e1a9eeb88f860228bfbdea032d4f57f17d547c6b970",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "ed9b3799dccb18fe2da2e12c7b840d3aa9d6a96b603b6a915a3fd31614113b54",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "not_required",
+  "accepted": true,
+  "accepted_at": "2026-11-02T23:52:36.974Z",
+  "model": "swe-2-high"
+}

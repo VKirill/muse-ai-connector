@@ -1,0 +1,16 @@
+#!/bin/bash
+# Forced command of Muse's SSH key (installed as /usr/local/bin/muse-task-shell).
+# Sends the session into the current task container via the sudo-allowlisted
+# muse-docker-exec. Any SSH_ORIGINAL_COMMAND is forwarded as an argument
+# because sudo strips the environment.
+set -euo pipefail
+
+current_file=${MUSE_BENCH_CURRENT:-/srv/muse-bench/current}
+
+name=$(head -n 1 "$current_file" 2>/dev/null | tr -d '[:space:]' || true)
+if [ -z "$name" ]; then
+  echo "no task running" >&2
+  exit 1
+fi
+
+exec sudo -n /usr/local/sbin/muse-docker-exec "$name" "${SSH_ORIGINAL_COMMAND:-}"

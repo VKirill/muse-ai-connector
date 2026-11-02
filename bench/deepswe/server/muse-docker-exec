@@ -1,0 +1,47 @@
+#!/bin/bash
+# muse-docker-exec <container> [command]
+#
+# The only command user `muse` may run via sudo. Opens a shell (or runs one
+# command) inside the CURRENT DeepSWE task container, in /app. Refuses every
+# other container and every other docker verb.
+set -euo pipefail
+
+current_file=${MUSE_BENCH_CURRENT:-/srv/muse-bench/current}
+docker=${MUSE_DOCKER:-docker}
+
+name=${1:-}
+if [ -z "$name" ]; then
+  echo "usage: muse-docker-exec <container>" >&2
+  exit 1
+fi
+if ! [[ "$name" =~ ^[a-z0-9][a-z0-9_.-]{0,63}$ ]]; then
+  echo "refused: bad container name: $name" >&2
+  exit 1
+fi
+
+current=$(head -n 1 "$current_file" 2>/dev/null | tr -d '[:space:]' || true)
+if [ -z "$current" ]; then
+  echo "refused: no task running" >&2
+  exit 1
+fi
+if [ "$name" != "$current" ]; then
+  echo "refused: $name is not the current task container" >&2
+  exit 1
+fi
+
+ttyflag=
+if [ -t 0 ] && [ -t 1 ]; then
+  ttyflag=-t
+fi
+
+# The command arrives as $2 when forwarded by muse-task-shell through sudo
+# (sudo strips SSH_ORIGINAL_COMMAND), or in the environment when run directly.
+command=${2:-${SSH_ORIGINAL_COMMAND:-}}
+
+if [ -n "$command" ]; then
+  # shellcheck disable=SC2086
+  exec "$docker" exec -i $ttyflag -w /app "$name" bash -lc "$command"
+else
+  # shellcheck disable=SC2086
+  exec "$docker" exec -i $ttyflag -w /app "$name" bash -l
+fi
