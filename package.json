@@ -6,15 +6,34 @@
   "author": "Kirill Vechkasov",
   "type": "module",
   "bin": {
-    "musebridge": "bin/musebridge.mjs"
+    "musebridge": "bin/musebridge.mjs",
+    "muse-acp": "bin/muse-acp.mjs"
   },
   "scripts": {
-    "test": "node --test tests/*.test.mjs"
+    "test": "node --test tests/*.test.mjs",
+    "typecheck": "tsc --noEmit"
   },
   "engines": {
-    "node": ">=22"
+    "node": ">=22",
+    "bb": ">=0.46",
+    "bbPluginSdk": ">=0.6.49"
+  },
+  "bb": {
+    "name": "Muse",
+    "description": "Run BB chats on Muse (muse.ai) through a signed-in Chrome profile.",
+    "branding": {
+      "icon": "./icons/muse.svg"
+    },
+    "server": "./server.ts",
+    "host": "./host.ts"
   },
   "dependencies": {
-    "playwright-core": "^1.56.1"
+    "@get-bb/plugin-sdk": "0.6.49",
+    "playwright-core": "^1.56.1",
+    "zod": "^4.6.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.7.0"
   }
 }

@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-acp-provider",
+  "task_sha256": "589e18f4b367a41e6ff1ae023088b156afe0ddf3fe2fe61ee8ddb173244354a3",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "66c4fb21c81463d7662ead92b05c30149399cc95e8f06d6b48f435cc9c05cd06",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-02T22:45:32.315Z",
+  "model": "grok-4.6"
+}
