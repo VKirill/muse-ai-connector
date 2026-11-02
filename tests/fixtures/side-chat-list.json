@@ -1,0 +1,38 @@
+{
+  "cacheKey": "side-chat-lists",
+  "schemaVersion": 4,
+  "cachedAtMs": 1762120003000,
+  "targetKey": "side",
+  "sessions": [
+    {
+      "session_id": "aaaaaaaa-1111-4111-8111-111111111111",
+      "can_send_messages": true,
+      "can_send_actions": true,
+      "created_at": 1762110000000,
+      "updated_at": 1762120001000,
+      "status": "completed",
+      "title": "Older chat",
+      "snippet": "hi",
+      "is_primary": false,
+      "is_thread": true,
+      "archived": false,
+      "pinned": true,
+      "unread_count": 0
+    },
+    {
+      "session_id": "3dfece7e-0301-47cb-8bf8-50383cde4a96",
+      "can_send_messages": true,
+      "can_send_actions": true,
+      "created_at": 1762120000000,
+      "updated_at": 1762120002000,
+      "status": "completed",
+      "title": "Reply with PONG",
+      "snippet": "42",
+      "is_primary": false,
+      "is_thread": true,
+      "archived": false,
+      "pinned": false,
+      "unread_count": 0
+    }
+  ]
+}

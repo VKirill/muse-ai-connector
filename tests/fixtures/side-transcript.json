@@ -1,0 +1,83 @@
+{
+  "cacheKey": "side:3dfece7e-0301-47cb-8bf8-50383cde4a96",
+  "schemaVersion": 4,
+  "cachedAtMs": 1762120003000,
+  "sessionId": "3dfece7e-0301-47cb-8bf8-50383cde4a96",
+  "targetKey": "side:3dfece7e-0301-47cb-8bf8-50383cde4a96",
+  "transcriptRevision": 2,
+  "messageIds": [
+    "user-msg-pong",
+    "assistant-msg-pong",
+    "user-msg-42",
+    "assistant-msg-42"
+  ],
+  "messagesById": {
+    "user-msg-pong": {
+      "id": "user-msg-pong",
+      "messageId": "user-msg-pong",
+      "role": "user",
+      "content": "Test from connector: reply with the single word PONG.",
+      "createdAt": "2026-11-02T22:20:50.000Z",
+      "source": "client",
+      "isTextStreaming": false,
+      "deliveryStatus": "sent",
+      "clientSentAt": "2026-11-02T22:20:50.000Z",
+      "sortSeq": 10,
+      "sortSeqSource": "canonical"
+    },
+    "assistant-msg-pong": {
+      "id": "assistant-msg-pong",
+      "messageId": "assistant-msg-pong",
+      "role": "assistant",
+      "content": "PONG",
+      "createdAt": "2026-11-02T22:20:54.911Z",
+      "source": "runtime",
+      "isTextStreaming": false,
+      "rootMessageExecutionId": "exec-pong",
+      "sortSeq": 70,
+      "sortSeqSource": "canonical",
+      "analytics": {
+        "initialModel": "Muse Spark",
+        "finalModel": "Muse Spark",
+        "clientFirstTokenMs": 0,
+        "clientDoneMs": 0
+      }
+    },
+    "user-msg-42": {
+      "id": "user-msg-42",
+      "messageId": "user-msg-42",
+      "role": "user",
+      "content": "And now reply with the number 42.",
+      "createdAt": "2026-11-02T22:21:10.000Z",
+      "source": "client",
+      "isTextStreaming": false,
+      "deliveryStatus": "sent",
+      "clientSentAt": "2026-11-02T22:21:10.000Z",
+      "sortSeq": 80,
+      "sortSeqSource": "canonical"
+    },
+    "assistant-msg-42": {
+      "id": "assistant-msg-42",
+      "messageId": "assistant-msg-42",
+      "role": "assistant",
+      "content": "42",
+      "createdAt": "2026-11-02T22:21:14.000Z",
+      "source": "runtime",
+      "isTextStreaming": false,
+      "rootMessageExecutionId": "exec-42",
+      "sortSeq": 90,
+      "sortSeqSource": "canonical",
+      "analytics": {
+        "initialModel": "Muse Spark",
+        "finalModel": "Muse Spark",
+        "clientFirstTokenMs": 0,
+        "clientDoneMs": 0
+      }
+    }
+  },
+  "reactions": {},
+  "oldestSeq": 10,
+  "newestSeq": 90,
+  "hasMore": false,
+  "lastAccessedAtMs": 1762120003000
+}
