@@ -2,6 +2,7 @@
 title: Muse AI connector (BB provider plugin)
 status: building
 started: 2026-11-02
+updated: 2026-11-02
 ---
 
 # Muse AI connector
@@ -41,7 +42,7 @@ server.ts / host.ts / app.tsx: BB plugin (provider "Muse", settings + accounts s
   i18n pattern `/Users/vechkasov/Documents/BB-сервис/plugins/bb-plugin-md-editor/i18n.ts` (if missing, the md-editor/markdown-pro plugin folder).
 
 ## Tasks
-1. `muse-bridge-core` — package, session driver, cache parser, CLI for one account.
+1. `muse-bridge-core` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `ee1809f`) — package, session driver, cache parser, CLI for one account.
 2. `muse-account-pool` — several accounts, sign-in window, pick + lock, status.
 3. `muse-acp-provider` — ACP agent + BB plugin provider registration, streaming.
 4. `muse-settings-ui` — settings/status screen EN+RU, Pokecut, README.
