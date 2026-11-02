@@ -3,6 +3,7 @@ import fs from "node:fs";
 import {
   acquire,
   addAccount,
+  isLocked,
   listAccounts,
   pickAccount,
   removeAccount,
@@ -201,7 +202,7 @@ async function cmdAccountsAdd(args) {
 
 async function cmdAccountsList(args) {
   const asJson = takeFlag(args, "--json");
-  const accounts = listAccounts();
+  const accounts = listAccounts().map((account) => ({ ...account, locked: isLocked(account.id) }));
   if (asJson) {
     process.stdout.write(`${JSON.stringify(accounts, null, 2)}\n`);
     return;
