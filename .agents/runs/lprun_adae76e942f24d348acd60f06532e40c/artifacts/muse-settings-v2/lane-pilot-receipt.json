@@ -1,0 +1,169 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-settings-v2",
+  "attemptId": "lpattempt_6ff1ce6708b54e50ac72c6c6d1d75744",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_d28bv6wyaq",
+  "ownsPaths": [
+    "app.tsx",
+    "app.css",
+    "i18n.ts",
+    "tests/i18n.test.mjs",
+    "tests/ui-style.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": ".agents/plans/muse-packaging.md",
+      "windows": []
+    },
+    {
+      "path": "app.tsx",
+      "windows": []
+    },
+    {
+      "path": "app.css",
+      "windows": []
+    },
+    {
+      "path": "i18n.ts",
+      "windows": []
+    },
+    {
+      "path": "server.ts",
+      "windows": []
+    }
+  ],
+  "output": "Экран настроек Muse теперь ставит коннектор, ведёт вход через Chrome и копирует аккаунт на все машины.\n\nИзменены `app.tsx`, `app.css`, `i18n.ts`.\n\n- Карточка машины: runtime (версия / Installing… / Install / неподдерживаемая ОС) и Chrome; **Install** вызывает `rpc.call(\"installRuntime\")`.\n- Пока идёт `addAccount`, на карточке спиннер и текст «A Chrome window opened on …». После успеха — подпись аккаунта и число из `synced` (ошибки синхронизации — по именам машин).\n- Если `chromeFound === false`, блок Add заменён текстом со списком подключённых машин с Chrome.\n- У аккаунта кнопки Check, **Copy to all machines** (`syncAccounts`) и Remove.\n\nПроверки: `node /tmp/muse-settings-check/check.mjs` → OK; `node --test tests/i18n.test.mjs tests/ui-style.test.mjs` → 3 pass; `npm run typecheck` → 0.\n\nВ `accountRow` нет `busy`/`max`, поэтому слоты на строке не рисуются — в RPC их нет, `server.ts` вне scope.\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"app.tsx:341-342\",\"app.tsx:315-323\",\"app.tsx:203-240\",\"i18n.ts:19-34\",\"i18n.ts:78-85\",\"cmd:node /tmp/muse-settings-check/check.mjs \\\"$PWD\\\"\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"app.tsx:203-208\",\"app.tsx:311-326\",\"app.tsx:40-47\",\"app.css:230-245\",\"i18n.ts:26-28\"]},\n  {\"item\":3,\"status\":\"done\",\"evidence\":[\"app.tsx:33-37\",\"app.tsx:203-240\",\"i18n.ts:30-31\"]},\n  {\"item\":4,\"status\":\"done\",\"evidence\":[\"cmd:node --test tests/i18n.test.mjs tests/ui-style.test.mjs\",\"cmd:npm run typecheck\"]}\n]\n```\n\nAPPROACH: UI читает уже существующие RPC `installRuntime`, `syncAccounts` и поле `synced` у `addAccount`; строки только через i18n, цвета через `--pk-*`.\nLESSON: Слоты busy/max в статусе аккаунта не приходят — для строки таблицы их нельзя нарисовать, пока host RPC не отдаст поля.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-settings-check/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "e32d55a43f11563028cd5cded7285b28d0f10d84a7ca90d18dc280edac2ec0b6",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6ff1ce6708b54e50ac72c6c6d1d75744/muse-ai-connector",
+      "revision": {
+        "head": "3126a1590d55a1f43450cac0362a58570f9c293a",
+        "dirty": 3
+      }
+    },
+    {
+      "command": "node --test tests/i18n.test.mjs tests/ui-style.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ en and ru key sets are equal (1.386917ms)\r\n✔ app.tsx contains no hex colour literal (0.727625ms)\r\n✔ app.css contains no hex colour literal (0.075042ms)\r\nℹ tests 3\r\nℹ suites 0\r\nℹ pass 3\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 70.624709\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "5892d5c8c13357b0a5c4273abc4f6461f042615544103278e4bdbbe43b36a296",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6ff1ce6708b54e50ac72c6c6d1d75744/muse-ai-connector",
+      "revision": {
+        "head": "3126a1590d55a1f43450cac0362a58570f9c293a",
+        "dirty": 3
+      }
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-muse@0.1.1 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.1\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "cf730506f1673db82b72c59d873341003d6a096fb2d9a259ea4ed8220728ea32",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6ff1ce6708b54e50ac72c6c6d1d75744/muse-ai-connector",
+      "revision": {
+        "head": "3126a1590d55a1f43450cac0362a58570f9c293a",
+        "dirty": 3
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "ca62073ad7de68571fa9b3abeb91e8733525c1646a5f832a4a18547bde6470bb",
+      "sentPlanSha256": null,
+      "sourceLength": 113,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-cursor",
+      "model": "grok-4.6",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_6ff1ce6708b54e50ac72c6c6d1d75744",
+      "threadId": "thr_d28bv6wyaq",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "acp-cursor",
+        "model": "grok-4.6",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- Generate site designs without waiting for the owner's approval; keep iterating and testing until the result is a genuinely modern, colorful, attractive site, not a bland one.\n- When generating a site screen by screen, pass the previous screen to the generator and tell it which next screen of the same site it is producing, so the screens read as one coherent site.",
+        "rulesPicked": {
+          "total": 16,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_abedae7a0d696fe3",
+            "rule_2b81b60a454a153b"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- .agents/plans/muse-packaging.md L1-L72 (sha256 52f30b39)\n- app.tsx L1-L233 (sha256 5c86fd43)\n- app.css L1-L224 (sha256 76bd676b)\n- i18n.ts L1-L89 (sha256 c00a846e)\n- server.ts L1-L284 (sha256 41d98e00)",
+        "executionPacketSha256": "aa85d253c2dddf9ca97bdddd31b7c33ad00663d4e6e1c29faa9722b0a3d1e629",
+        "pmReadContext": "{\"summary\":\"This bounded context summarizes the excerpts provided for task muse-settings-v2 (lane muse-ui) within the muse-ai-connector plugin. The objective of this task is to deliver a complete, polished Settings screen in BB (Settings → Plugins → Muse) that allows users to manage Muse accounts, observe runtime status across all connected BB machines, trigger runtime installation, execute an intuitive sign-in flow that opens Chrome on an appropriate host, and synchronize account credentials across all connected machines including headless environments.\\n\\nArchitectural Context & Packaging Plan (.agents/plans/muse-packaging.md):\\nThe packaging plan addresses zero-terminal onboarding for BB users. BB hosts receive only bundled host.mjs artifacts; CLI binaries (bin/, bridge/) and node_modules are not distributed via the host bundle. To make Muse operational, the packaging plan establishes four pieces: Piece A (runtime self-install into ~/.muse-bridge/runtime/<version>/ with bin shims), Piece B (hub-coordinated account export/import across hosts), Piece C (Settings screen UI, which is the current task), and Piece D (comprehensive documentation). The settings UI task depends on upstream contracts from muse-runtime-install (exposing runtime status and installRuntime RPC) and muse-hub-sync (exposing syncAccounts RPC and syncing logic upon account creation).\\n\\nCurrent Settings Implementation in app.tsx:\\nThe existing app.tsx defines a settings section 'muse-accounts' using @get-bb/plugin-sdk/app. It displays connected hosts (HostCard) and their accounts (AccountCard), but reflects an earlier, incomplete version of the feature set:\\n1. Runtime Status & Actions: HostCard displays rows for Google Chrome (chromeFound/chromePath), Bridge (bridgeFound/bridgeVersion), and Agent (agentFound). It lacks a unified runtime line indicating whether the runtime is installed, currently installing, unsupported, or missing, as well as the 'Install' button calling rpc.call('installRuntime').\\n2. Account Actions: AccountCard currently displays account labels, status pills (busy, signed_in, signed_out, unknown), last used timestamps, and actions for checking status or removing accounts (with a profile purge option). It lacks the 'Copy to all machines' button which must invoke rpc.call('syncAccounts', { id }).\\n3. Sign-in Flow & In-Flight State: When adding an account, HostCard simply presents a text input and 'Add account' button that directly triggers rpc.call('addAccount', { hostId, label }). It does not implement the required in-progress state notifying the user that a Chrome window has opened on the specified machine with a spinner and cancel hint, nor does it display the post-sign-in success state reporting the account label and the number of synchronized machines.\\n4. Headless & Chrome-less Machines: The Add account form is currently rendered regardless of whether Google Chrome is detected on the host. Under the new requirements, if st.chromeFound is false, the Add account input and button must be hidden and replaced with informative i18n text identifying connected machines that do possess Chrome where the account should be added instead.\\n\\nLocalization Invariants in i18n.ts:\\nThe plugin mandates bilingual support (English default, Russian when document.documentElement.lang starts with 'ru'). The ru dictionary is strictly typed as Record<I18nKey, string>, requiring exact key parity with en. Currently, i18n.ts contains 31 keys covering basic statuses, errors, and removal confirmations. It lacks translation keys for the new runtime status states (installed, installing, install button, unsupported), account copying/syncing, in-flight Chrome sign-in guidance, success messaging with machine counts, and fallback guidance for Chrome-less hosts.\\n\\nStyling Invariants in app.css:\\nAll styling adheres to the Pokecut design language. The CSS maps --pk-* tokens to local --muse-* variables with fallbacks to standard BB theme variables (--card, --border, --muted, --primary, --destructive, etc.). Component classes include panels, cards, rows, action bars, inputs, buttons, and status pills. No raw hex or rgb color literals exist. To fulfill the task acceptance criteria, app.css may need to define spinner styles or layout adjustments for the in-flight sign-in panel and sync feedback messages while strictly preserving Pokecut token constraints.\\n\\nBackend & RPC Interface Observations (server.ts):\\nThe excerpt of server.ts defines rpcContract with methods hosts, addAccount, checkAccounts, and removeAccount. Notably, in the provided excerpt, rpcContract does not yet declare syncAccounts or installRuntime, and hostStatus does not yet include a runtime property. Because server.ts and host.ts are explicitly out of scope and listed under never_touch, the UI implementation in app.tsx must be written against the expected signatures established by the prerequisite tasks (muse-runtime-install and muse-hub-sync).\\n\\nVerification & Acceptance:\\nAcceptance requires that: (a) while addAccount runs, an in-progress state shows that Chrome opened on that machine with a spinner, followed by success text reporting the account label and synced machine count; (b) machines with chromeFound === false hide the Add block and display i18n text naming connected Chrome-equipped machines; (c) each account row offers Check, Copy to all machines, and Remove, with the runtime line showing version or an Install button; and (d) node --test tests/i18n.test.mjs tests/ui-style.test.mjs and npm run typecheck both exit 0.\",\"keyFacts\":[\"According to .agents/plans/muse-packaging.md, BB hosts receive only the bundled host.mjs; bin/, bridge/, and node_modules are not shipped to hosts.\",\"According to .agents/plans/muse-packaging.md, the connector runtime consists of CLI musebridge and ACP agent muse-acp in ~/.muse-bridge/runtime/<version>/ with shims in ~/.muse-bridge/bin/.\",\"According to .agents/plans/muse-packaging.md, sign-in opens Chrome with a per-account profile and exports cookies to ~/.muse-bridge/accounts/<id>/cookies.json (0600), requiring Chrome only for sign-in or refresh.\",\"According to .agents/plans/muse-packaging.md, task muse-settings-v2 depends on muse-runtime-install (runtime installation) and muse-hub-sync (account synchronization across hosts via hub RPC).\",\"According to .agents/plans/muse-packaging.md, the settings screen must display a runtime line per machine (installed vX, installing, Install button, or not supported) and a Chrome line.\",\"According to .agents/plans/muse-packaging.md, the settings screen accounts table must present account label, status pill, slots busy/max, last used timestamp, and actions: Check, Sync to all, and Remove.\",\"According to .agents/plans/muse-packaging.md, the Add account block must show a label field and button, and while waiting show an in-progress state indicating a Chrome window opened on the machine with a spinner, followed by sync success or error.\",\"According to .agents/plans/muse-packaging.md, on a machine without Chrome, the Add block must state that Chrome is missing and direct the user to add the account on a machine with Chrome, noting it will copy automatically.\",\"According to app.tsx, the settings UI is registered as settings section 'muse-accounts' with title and description resolved via i18n helper t().\",\"According to app.tsx, AccountCard currently displays label, status pill, id, last used label, purge profile checkbox, check button, and remove button.\",\"According to app.tsx, AccountCard currently lacks a 'Copy to all machines' or sync action button.\",\"According to app.tsx, HostCard currently displays rows for Google Chrome, Bridge (bridgeFound), and Agent (agentFound), but does not have a runtime status line or runtime Install button.\",\"According to app.tsx, HostCard unconditionally renders the Add account input and button without checking st.chromeFound or presenting fallback guidance naming Chrome-equipped hosts.\",\"According to app.tsx, triggering onAdd directly invokes rpc.call('addAccount', { hostId, label }) without displaying an in-flight Chrome sign-in notice, spinner, or sync machine count upon completion.\",\"According to app.tsx, MuseSettings manages state for hosts, error, and busy, currently only executing RPC calls hosts, addAccount, checkAccounts, and removeAccount.\",\"According to app.css, styling reads --pk-* Pokecut tokens with fallback to BB palette variables (such as --card, --border, --muted, --primary, --destructive).\",\"According to app.css, component classes include .muse-panel, .muse-panel-head, .muse-panel-body, .muse-card, .muse-row, .muse-muted, .muse-error, .muse-stack, .muse-actions, .muse-input, .muse-btn, .muse-btn-accent, .muse-check, .muse-account, .muse-account-meta, .muse-account-name, and .muse-pill* variants.\",\"According to app.css, no raw color literals are used; colors are strictly configured through CSS variables and color-mix expressions.\",\"According to i18n.ts, language detection inspects document.documentElement.lang, selecting 'ru' if it starts with 'ru', otherwise defaulting to 'en'.\",\"According to i18n.ts, ru is strictly typed as Record<I18nKey, string>, requiring exact key-for-key parity with en.\",\"According to i18n.ts, currently 31 translation keys are defined, lacking keys for runtime installation, cross-machine syncing, Chrome-less host fallback, and in-progress sign-in states.\",\"According to server.ts, rpcContract defines RPC methods hosts, addAccount, checkAccounts, and removeAccount, without exposing syncAccounts or installRuntime in the excerpt.\",\"According to server.ts, hostStatus includes platform, chromeFound, chromePath, bridgeFound, bridgeVersion, agentFound, accounts, and problems, without a runtime status property in the excerpt.\",\"According to server.ts, accountRow schema includes id, label, status ('signed_in' | 'signed_out' | 'unknown'), locked, lastUsedAt, and lastCheckedAt.\",\"According to TASK CONTRACT, invariant rules require every visible string to come from i18n.ts with identical keys in EN and RU, and colors to strictly use --pk-* tokens with BB fallbacks.\",\"According to TASK CONTRACT, server.ts and host.ts are explicitly out of scope and in never_touch; modifications are restricted to app.tsx, app.css, i18n.ts, and test files.\",\"According to TASK CONTRACT, acceptance requires showing an in-progress sign-in state with a spinner when addAccount runs, and showing the account label and synced machine count on success.\",\"According to TASK CONTRACT, acceptance requires replacing the Add block on machines with chromeFound === false with i18n text naming connected machines with Chrome.\",\"According to TASK CONTRACT, acceptance requires each account row to offer Check, Copy to all machines (rpc syncAccounts with id), and Remove, and a runtime line with version or Install button (rpc installRuntime).\",\"According to TASK CONTRACT, verification consists of node --test tests/i18n.test.mjs tests/ui-style.test.mjs and npm run typecheck.\"],\"openQuestions\":[\"The server.ts excerpt does not define rpcContract.syncAccounts or rpcContract.installRuntime, nor does addAccount return a synced field. Will these RPC endpoints and types be in place from the prerequisite tasks (muse-runtime-install and muse-hub-sync) before muse-settings-v2 builds, or must app.tsx declare ambient/extended RPC types?\",\"What exact schema does host.status.runtime expose once muse-runtime-install is implemented (e.g., installed boolean, version string, path string, status string like 'installing')?\",\"Plan Piece C mentions displaying 'slots busy/max' in the accounts table, but server.ts accountRow only contains locked (boolean). Does the upstream sync work add slot counters to accountRow, or should the UI continue to display busy state solely from locked?\",\"What data shape does the synced result return from addAccount or syncAccounts (e.g., a number of machines, or an array of machine IDs/names), and how should it be stored and displayed in the UI state?\",\"Plan Piece C notes a 'Cancel hint' during the addAccount sign-in wait state. Does an RPC endpoint exist to abort or close the opened Chrome sign-in process, or does 'Cancel' simply dismiss the pending UI state in the settings view?\",\"When a machine has chromeFound === false, how should the UI format the names of connected Chrome-equipped machines (e.g., comma-separated list, bullet points, or inline sentence interpolation in i18n)?\",\"If no connected machines have Chrome found (e.g. all connected machines are headless servers), what fallback message should be displayed in the Add account area?\",\"Does the new runtime status line replace both the 'Bridge' and 'Agent' status rows in HostCard, or should all three rows be displayed simultaneously?\",\"What parameters does rpc.call('syncAccounts', ...) expect: only account id ({ id }), or both hostId and account id ({ hostId, id })?\",\"What parameters does rpc.call('installRuntime', ...) expect: { hostId: string } or does it operate implicitly on the selected host?\",\"Does app.css already have a preferred spinner pattern or CSS animation class for pending operations, or should a minimal spinner component using --pk-* tokens be introduced in app.css?\",\"What assertions and test coverage exist in tests/i18n.test.mjs and tests/ui-style.test.mjs, and do they enforce specific naming conventions for new i18n keys or strict token scanning in app.css?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 14406,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "acp-cursor/grok-4.6",
+        "harness": {
+          "id": "hrn_8fb7ecf49567c8af",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

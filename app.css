@@ -220,4 +220,33 @@
   .muse-text-danger {
     color: var(--muse-danger-text);
   }
+
+  .muse-ok {
+    color: var(--muse-success-text);
+    font-size: 13px;
+    white-space: pre-wrap;
+  }
+
+  .muse-progress {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .muse-spinner {
+    flex: 0 0 auto;
+    width: 14px;
+    height: 14px;
+    border: 2px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+    border-top-color: var(--foreground);
+    border-radius: 9999px;
+    animation: muse-spin 0.8s linear infinite;
+  }
+}
+
+@keyframes muse-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
