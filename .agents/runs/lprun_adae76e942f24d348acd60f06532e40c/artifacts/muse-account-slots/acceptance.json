@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-account-slots",
+  "task_sha256": "4dfb8db61ef12ecef9f0024dd8dc5708ce396090ec6cd084f08225bde981cbca",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "05f2802d9a961804d20d20fbf376393b7ed6618d83138f2e03a71f6d7597fca9",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T09:54:12.320Z",
+  "model": "swe-2-high"
+}
