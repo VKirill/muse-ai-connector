@@ -13,7 +13,46 @@ const accountRow = z.object({
   locked: z.boolean(),
   lastUsedAt: z.string(),
   lastCheckedAt: z.string(),
+  busy: z.number().int().nonnegative().optional(),
+  max: z.number().int().positive().optional(),
 });
+
+const usageSnapshot = z.object({
+  plan: z.string().nullable().optional(),
+  planCode: z.string().nullable().optional(),
+  isPaid: z.boolean().optional(),
+  state: z.string().nullable().optional(),
+  percentUsed: z.number().nullable().optional(),
+  resetsAt: z.number().nullable().optional(),
+  quotaStatus: z.string().nullable().optional(),
+  periodLabel: z.string().nullable().optional(),
+  extraTokensTotal: z.number().nullable().optional(),
+  extraTokensBalance: z.number().nullable().optional(),
+  extraTokensLeftLabel: z.string().nullable().optional(),
+  checkedAt: z.string().optional(),
+});
+export type UsageSnapshot = z.infer<typeof usageSnapshot>;
+
+const usageError = z.object({
+  code: z.string(),
+  message: z.string(),
+});
+export type UsageError = z.infer<typeof usageError>;
+
+const usageAccount = z.object({
+  id: z.string(),
+  usage: usageSnapshot.nullable(),
+  error: usageError.nullable(),
+});
+
+const mergedUsageAccount = z.object({
+  id: z.string(),
+  label: z.string(),
+  usage: usageSnapshot.nullable(),
+  error: usageError.nullable(),
+  hosts: z.array(z.string()),
+});
+export type MergedUsageAccount = z.infer<typeof mergedUsageAccount>;
 
 const runtimeState = z.object({
   installed: z.boolean(),
@@ -62,6 +101,10 @@ const hostContract = defineRpcContract({
     input: z.object({ id: z.string(), label: z.string(), cookies: z.array(cookieRow) }).strict(),
     output: importResult,
   },
+  usage: {
+    input: z.object({ id: z.string().optional() }).strict(),
+    output: z.object({ accounts: z.array(usageAccount) }),
+  },
 });
 
 export const rpcContract = defineRpcContract({
@@ -71,7 +114,56 @@ export const rpcContract = defineRpcContract({
   checkAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   removeAccount: { input: z.object({ hostId: z.string(), id: z.string(), purge: z.boolean() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   installRuntime: { input: z.object({ hostId: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  usage: { input: z.object({}).strict(), output: z.object({ accounts: z.array(mergedUsageAccount) }) },
 });
+
+type HostUsageFetch = (
+  hostId: string,
+  id: string,
+) => Promise<{ accounts: Array<{ id: string; usage: UsageSnapshot | null; error: UsageError | null }> }>;
+
+export async function collectMergedUsage(hosts: HostEntry[], fetchUsage: HostUsageFetch): Promise<MergedUsageAccount[]> {
+  type Group = { label: string; hosts: string[]; sourceHostId: string | null };
+  const groups = new Map<string, Group>();
+  for (const host of hosts) {
+    if (!host.status) continue;
+    for (const account of host.status.accounts) {
+      let group = groups.get(account.id);
+      if (!group) {
+        group = { label: account.label, hosts: [], sourceHostId: null };
+        groups.set(account.id, group);
+      }
+      if (!group.hosts.includes(host.hostId)) group.hosts.push(host.hostId);
+      if (!group.sourceHostId && host.connected && account.status === "signed_in") group.sourceHostId = host.hostId;
+    }
+  }
+  return Promise.all(
+    [...groups.entries()].map(async ([id, group]) => {
+      if (!group.sourceHostId) {
+        return { id, label: group.label, usage: null, error: null, hosts: group.hosts };
+      }
+      try {
+        const result = await fetchUsage(group.sourceHostId, id);
+        const row = result.accounts.find((a) => a.id === id) ?? result.accounts[0];
+        return {
+          id,
+          label: group.label,
+          usage: row?.usage ?? null,
+          error: row?.error ?? null,
+          hosts: group.hosts,
+        };
+      } catch (e) {
+        return {
+          id,
+          label: group.label,
+          usage: null,
+          error: { code: "usage_unavailable", message: e instanceof Error ? e.message : String(e) },
+          hosts: group.hosts,
+        };
+      }
+    }),
+  );
+}
 
 export const MUSE_PROVIDER_ID = "muse";
 export const MUSE_AGENT_COMMAND = "muse-acp";
@@ -312,6 +404,11 @@ export default function plugin(bb: BbPluginApi): void {
     },
     installRuntime({ hostId }) {
       return oneHost(hostId, (hid) => host.call("installRuntime", {}, { hostId: hid }));
+    },
+    async usage() {
+      const hosts = await listHosts();
+      const accounts = await collectMergedUsage(hosts, (hostId, id) => host.call("usage", { id }, { hostId }));
+      return { accounts };
     },
   });
 }
