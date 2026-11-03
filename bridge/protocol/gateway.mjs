@@ -1,11 +1,12 @@
 import { randomUUID } from "node:crypto";
+import WebSocket from "ws";
 import { cookieHeader } from "../cookies.mjs";
 import { decodeFrame, encodeRequest } from "./envelope.mjs";
 import { createHandshake } from "./noise.mjs";
 import { createStreamDecoder, decodeBody } from "./ndjson.mjs";
 
 const MUSE_ORIGIN = "https://muse.ai";
-const DEFAULT_WS = "wss://hatch.metaaivm.com/v1/noise";
+export const DEFAULT_WS = "wss://hatch.metaaivm.com/v1/noise";
 const APP_ID = "hatch-web";
 const CHROME_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
@@ -290,12 +291,32 @@ export async function bootstrapHttps({ cookies, fetchImpl = globalThis.fetch } =
   await postApi(fetchImpl, "/api/hatch/stateful-sharing", cookies, {});
 
   return {
-    gatewayUrl: ctx.gatewayUrl ?? DEFAULT_WS,
+    gatewayUrl: DEFAULT_WS,
+    vmGatewayUrl: ctx.gatewayUrl,
     vmId: ctx.vmId,
     vmName: ctx.vmName,
     authToken: ctx.authToken,
     notaryToken: ctx.notaryToken,
   };
+}
+
+export function gatewaySocketOptions() {
+  return {
+    headers: { Origin: MUSE_ORIGIN, "User-Agent": CHROME_UA },
+    perMessageDeflate: false,
+  };
+}
+
+export function defaultSocketFactory(url, Socket = WebSocket) {
+  const socket = new Socket(url, gatewaySocketOptions());
+  socket.binaryType = "arraybuffer";
+  return socket;
+}
+
+function dialFailed(status, reason) {
+  const err = new Error(`gateway dial failed: ${status ?? ""} ${reason ?? ""}`.trim());
+  err.code = "gateway_dial_failed";
+  return err;
 }
 
 function waitEvent(target, name) {
@@ -313,8 +334,32 @@ function waitEvent(target, name) {
   });
 }
 
+function waitDial(ws) {
+  if (ws.readyState === 1) return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const finish = (fn) => {
+      if (settled) return;
+      settled = true;
+      ws.removeEventListener?.("open", onOpen);
+      ws.removeEventListener?.("error", onError);
+      ws.removeEventListener?.("close", onClose);
+      ws.off?.("unexpected-response", onUnexpected);
+      fn();
+    };
+    const onOpen = () => finish(() => resolve());
+    const onError = (ev) => finish(() => reject(dialFailed(undefined, ev?.message ?? ev?.error ?? "error")));
+    const onClose = (ev) => finish(() => reject(dialFailed(ev?.code, ev?.reason)));
+    const onUnexpected = (_req, res) => finish(() => reject(dialFailed(res?.statusCode, res?.statusMessage)));
+    ws.addEventListener("open", onOpen, { once: true });
+    ws.addEventListener("error", onError, { once: true });
+    ws.addEventListener("close", onClose, { once: true });
+    ws.on?.("unexpected-response", onUnexpected);
+  });
+}
+
 async function handshake(ws) {
-  if (ws.readyState !== 1) await waitEvent(ws, "open");
+  if (ws.readyState !== 1) await waitDial(ws);
   const hs = createHandshake({ initiator: true });
   ws.send(hs.writeMessage());
   const msg2 = await waitEvent(ws, "message");
@@ -503,9 +548,18 @@ function openTunnel(ws, sendCipher, recvCipher) {
 }
 
 async function openSocket(url, socketFactory) {
-  const ws = socketFactory ? socketFactory(url) : new WebSocket(url);
-  const [sendCipher, recvCipher] = await handshake(ws);
-  return openTunnel(ws, sendCipher, recvCipher);
+  const ws = socketFactory ? socketFactory(url) : defaultSocketFactory(url);
+  try {
+    const [sendCipher, recvCipher] = await handshake(ws);
+    return openTunnel(ws, sendCipher, recvCipher);
+  } catch (err) {
+    try {
+      ws.close();
+    } catch {
+      /* ignore */
+    }
+    throw err;
+  }
 }
 
 /**
