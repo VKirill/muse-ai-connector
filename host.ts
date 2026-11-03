@@ -3,7 +3,6 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
@@ -12,7 +11,6 @@ import { installRuntime, runtimeStatus } from "./bridge/runtime-install.mjs";
 
 export { experimental_acpProviderBridge as experimental_providerBridge } from "@get-bb/plugin-sdk/provider-bridge/acp";
 
-const run = promisify(execFile);
 const HOME = os.homedir();
 const ADD_TIMEOUT_MS = 11 * 60 * 1000;
 const CHECK_TIMEOUT_MS = 120_000;
@@ -61,6 +59,14 @@ const hostContract = defineRpcContract({
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
   installRuntime: { input: z.object({}).strict(), output: hostStatus },
+  exportAccount: {
+    input: z.object({ id: z.string() }).strict(),
+    output: z.object({ id: z.string(), label: z.string(), cookies: z.array(z.record(z.string(), z.unknown())) }),
+  },
+  importAccount: {
+    input: z.object({ id: z.string(), label: z.string(), cookies: z.array(z.record(z.string(), z.unknown())) }).strict(),
+    output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
 });
 
 function findCommand(name: string): string | null {
@@ -141,20 +147,24 @@ function ensureRuntime(): void {
   runtime.running = performInstall(pluginVersion());
 }
 
-async function runBridge(args: string[], timeout: number): Promise<{ ok: boolean; stdout: string; stderr: string }> {
+async function runBridge(args: string[], timeout: number, stdin?: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   const bin = findCommand("musebridge");
   if (!bin) return { ok: false, stdout: "", stderr: "musebridge is not on PATH" };
   const env = {
     ...process.env,
     PATH: [process.env.PATH, "/opt/homebrew/bin", "/usr/local/bin", path.join(HOME, ".local/bin")].join(path.delimiter),
   };
-  try {
-    const { stdout, stderr } = await run(bin, args, { timeout, encoding: "utf8", env });
-    return { ok: true, stdout: String(stdout), stderr: String(stderr) };
-  } catch (e: unknown) {
-    const err = e as { stdout?: string; stderr?: string; message?: string };
-    return { ok: false, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? err.message ?? e) };
-  }
+  return new Promise((resolve) => {
+    const child = execFile(bin, args, { timeout, encoding: "utf8", env }, (error, stdout, stderr) => {
+      if (!error) {
+        resolve({ ok: true, stdout: String(stdout), stderr: String(stderr) });
+        return;
+      }
+      const err = error as { stdout?: string; stderr?: string; message?: string };
+      resolve({ ok: false, stdout: String(err.stdout ?? ""), stderr: String(err.stderr ?? err.message ?? error) });
+    });
+    child.stdin?.end(stdin ?? "", "utf8");
+  });
 }
 
 async function readStatus(extraProblems: string[] = []): Promise<HostStatus> {
@@ -230,6 +240,20 @@ export default experimental_defineHostEntry({
       const args = purge ? ["accounts", "remove", id, "--purge"] : ["accounts", "remove", id];
       const result = await runBridge(args, LIST_TIMEOUT_MS);
       return readStatus(failNote(result, "musebridge accounts remove failed."));
+    },
+    async exportAccount({ id }) {
+      const result = await runBridge(["accounts", "export", id, "--json"], LIST_TIMEOUT_MS);
+      if (!result.ok) throw new Error(stderrTail(result.stderr) || "musebridge accounts export failed.");
+      const parsed = JSON.parse(result.stdout) as { id?: unknown; label?: unknown; cookies?: unknown };
+      return {
+        id: typeof parsed.id === "string" ? parsed.id : id,
+        label: typeof parsed.label === "string" ? parsed.label : id,
+        cookies: Array.isArray(parsed.cookies) ? (parsed.cookies as Record<string, unknown>[]) : [],
+      };
+    },
+    async importAccount({ id, label, cookies }) {
+      const result = await runBridge(["accounts", "import", id, "--label", label], LIST_TIMEOUT_MS, JSON.stringify(cookies));
+      return { ok: result.ok, error: result.ok ? null : stderrTail(result.stderr) || "musebridge accounts import failed." };
     },
   },
 });

@@ -1,6 +1,8 @@
 import type { BbPluginApi, JsonValue, PluginSettingDescriptor } from "@get-bb/plugin-sdk";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
+// @ts-ignore bridge/hub-sync.mjs is plain ESM bundled into the plugin; it has no .d.ts
+import { syncAcrossHosts } from "./bridge/hub-sync.mjs";
 
 const accountRow = z.object({
   id: z.string(),
@@ -41,17 +43,29 @@ const hostEntry = z.object({
 });
 export type HostEntry = z.infer<typeof hostEntry>;
 
+const cookieRow = z.record(z.string(), z.unknown());
+const exportResult = z.object({ id: z.string(), label: z.string(), cookies: z.array(cookieRow) });
+const importResult = z.object({ ok: z.boolean(), error: z.string().nullable() });
+const syncRow = z.object({ accountId: z.string(), hostId: z.string(), ok: z.boolean(), error: z.string().nullable() });
+export type SyncRow = z.infer<typeof syncRow>;
+
 const hostContract = defineRpcContract({
   status: { input: z.object({}).strict(), output: hostStatus, experimental_retryable: true },
   addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
   installRuntime: { input: z.object({}).strict(), output: hostStatus },
+  exportAccount: { input: z.object({ id: z.string() }).strict(), output: exportResult },
+  importAccount: {
+    input: z.object({ id: z.string(), label: z.string(), cookies: z.array(cookieRow) }).strict(),
+    output: importResult,
+  },
 });
 
 export const rpcContract = defineRpcContract({
   hosts: { input: z.object({ hostId: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
-  addAccount: { input: z.object({ hostId: z.string(), label: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  addAccount: { input: z.object({ hostId: z.string(), label: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry), synced: z.array(syncRow) }) },
+  syncAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry), synced: z.array(syncRow) }) },
   checkAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   removeAccount: { input: z.object({ hostId: z.string(), id: z.string(), purge: z.boolean() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   installRuntime: { input: z.object({ hostId: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
@@ -185,28 +199,76 @@ export default function plugin(bb: BbPluginApi): void {
     }
   }
 
+  async function listHosts(hostId?: string): Promise<HostEntry[]> {
+    const listed = await bb.sdk.hosts.list();
+    const rows = listed.filter((h) => !hostId || h.id === hostId);
+    const hosts: HostEntry[] = await Promise.all(
+      rows.map(async (h): Promise<HostEntry> => {
+        const connected = h.status === "connected";
+        const name = h.name || h.id;
+        if (!connected) return { hostId: h.id, name, connected, status: null, error: null };
+        try {
+          const status = await host.call("status", {}, { hostId: h.id });
+          return { hostId: h.id, name, connected, status, error: null };
+        } catch (e) {
+          return { hostId: h.id, name, connected, status: null, error: e instanceof Error ? e.message : String(e) };
+        }
+      }),
+    );
+    hosts.sort((a, b) => Number(b.status?.chromeFound ?? false) - Number(a.status?.chromeFound ?? false));
+    return hosts;
+  }
+
+  const callHost = (method: string, input: unknown, { hostId }: { hostId: string }): Promise<unknown> =>
+    method === "exportAccount"
+      ? host.call("exportAccount", input as { id: string }, { hostId })
+      : host.call("importAccount", input as { id: string; label: string; cookies: Record<string, unknown>[] }, { hostId });
+
+  const syncTargets = (entries: HostEntry[]) =>
+    entries.map((h) => ({
+      hostId: h.hostId,
+      connected: h.connected,
+      runtime: Boolean(h.status?.runtime?.installed || h.status?.runtime?.dev),
+    }));
+
+  async function syncFrom(sourceHostId: string, accountId: string, entries: HostEntry[]): Promise<SyncRow[]> {
+    const targets = syncTargets(entries);
+    try {
+      const rows = (await syncAcrossHosts({ sourceHostId, accountId, hosts: targets, call: callHost })) as {
+        hostId: string;
+        ok: boolean;
+        error?: string;
+      }[];
+      return rows.map((r) => ({ accountId, hostId: r.hostId, ok: r.ok, error: r.error ?? null }));
+    } catch (e) {
+      const error = e instanceof Error ? e.message : String(e);
+      return targets
+        .filter((t) => t.hostId !== sourceHostId && t.connected && t.runtime)
+        .map((t) => ({ accountId, hostId: t.hostId, ok: false, error }));
+    }
+  }
+
   bb.rpc.register(rpcContract, {
     async hosts({ hostId }) {
-      const listed = await bb.sdk.hosts.list();
-      const rows = listed.filter((h) => !hostId || h.id === hostId);
-      const hosts: HostEntry[] = await Promise.all(
-        rows.map(async (h): Promise<HostEntry> => {
-          const connected = h.status === "connected";
-          const name = h.name || h.id;
-          if (!connected) return { hostId: h.id, name, connected, status: null, error: null };
-          try {
-            const status = await host.call("status", {}, { hostId: h.id });
-            return { hostId: h.id, name, connected, status, error: null };
-          } catch (e) {
-            return { hostId: h.id, name, connected, status: null, error: e instanceof Error ? e.message : String(e) };
-          }
-        }),
-      );
-      hosts.sort((a, b) => Number(b.status?.chromeFound ?? false) - Number(a.status?.chromeFound ?? false));
-      return { hosts };
+      return { hosts: await listHosts(hostId) };
     },
-    addAccount({ hostId, label }) {
-      return oneHost(hostId, (id) => host.call("addAccount", { label }, { hostId: id }));
+    async addAccount({ hostId, label }) {
+      const answer = await oneHost(hostId, (id) => host.call("addAccount", { label }, { hostId: id }));
+      const created = answer.hosts[0]?.status?.accounts?.filter((a) => a.label === label && a.status === "signed_in").pop();
+      if (!created) return { ...answer, synced: [] as SyncRow[] };
+      const entries = await listHosts();
+      return { ...answer, synced: await syncFrom(hostId, created.id, entries) };
+    },
+    async syncAccounts({ hostId, id }) {
+      const entries = await listHosts();
+      const source = entries.find((h) => h.hostId === hostId);
+      if (!source?.connected || !source.status) {
+        return { hosts: source ? [source] : [], synced: [] as SyncRow[] };
+      }
+      const ids = id ? [id] : source.status.accounts.filter((a) => a.status === "signed_in").map((a) => a.id);
+      const synced: SyncRow[] = [];
+      for (const accountId of ids) synced.push(...(await syncFrom(hostId, accountId, entries)));
+      return { hosts: entries, synced };
     },
     checkAccounts({ hostId, id }) {
       return oneHost(hostId, (hid) => host.call("checkAccounts", id ? { id } : {}, { hostId: hid }));

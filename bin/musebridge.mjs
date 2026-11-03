@@ -15,7 +15,7 @@ import {
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
-import { cookiesPath, saveCookies } from "../bridge/cookies.mjs";
+import { cookiesPath, loadCookies, saveCookies } from "../bridge/cookies.mjs";
 import { updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome, profileDir } from "../bridge/paths.mjs";
 import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
@@ -41,8 +41,10 @@ Commands:
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
   accounts refresh <id>     Export cookies from the signed-in Chrome profile
-  accounts import <id> [--label <label>]
-                            Import a cookies JSON array from stdin (sync targets)
+  accounts import [<id>] [--label <label>]
+                            Import a cookies JSON array or an export object from stdin
+  accounts export <id> --json
+                            Print {id, label, cookies} on stdout (host RPC only)
   accounts set <id> --max-parallel <n>
                             Set how many chats the account serves at once (1..50)
   sync targets add <name>   Add an ssh host that receives refreshed cookies
@@ -410,22 +412,50 @@ export async function cmdAccountsRefresh(args, deps = {}) {
   await pushAfterCookies(id);
 }
 
-async function cmdAccountsImport(args) {
-  const label = takeOption(args, "--label");
+async function cmdAccountsExport(args) {
+  const asJson = takeFlag(args, "--json");
   const id = args[0];
-  if (!id) {
-    process.stderr.write("Usage: musebridge accounts import <id> [--label <label>]\n");
+  if (!id || !asJson) {
+    process.stderr.write("Usage: musebridge accounts export <id> --json\n");
     process.exit(1);
   }
-  if (process.stdin.isTTY) {
-    process.stderr.write("Expected a cookies JSON array on stdin.\n");
+  const account = listAccounts().find((a) => a.id === id);
+  if (!account) {
+    process.stderr.write(`Unknown account: ${id}\n`);
     process.exit(1);
   }
   let cookies;
   try {
-    cookies = JSON.parse(await readStdin());
+    cookies = loadCookies(id);
   } catch {
-    cookies = null;
+    process.stderr.write(`No cookies for ${id}\n`);
+    process.exit(1);
+  }
+  process.stdout.write(`${JSON.stringify({ id: account.id, label: account.label, cookies })}\n`);
+}
+
+async function cmdAccountsImport(args) {
+  let label = takeOption(args, "--label");
+  if (process.stdin.isTTY) {
+    process.stderr.write("Expected a cookies JSON array on stdin.\n");
+    process.exit(1);
+  }
+  let payload;
+  try {
+    payload = JSON.parse(await readStdin());
+  } catch {
+    payload = null;
+  }
+  let id = args[0];
+  let cookies = payload;
+  if (payload && typeof payload === "object" && !Array.isArray(payload) && Array.isArray(payload.cookies)) {
+    cookies = payload.cookies;
+    id = id ?? (typeof payload.id === "string" ? payload.id : undefined);
+    label = label ?? (typeof payload.label === "string" ? payload.label : undefined);
+  }
+  if (!id) {
+    process.stderr.write("Usage: musebridge accounts import <id> [--label <label>]\n");
+    process.exit(1);
   }
   if (!Array.isArray(cookies) || cookies.some((c) => !c || typeof c.name !== "string" || !("value" in c))) {
     process.stderr.write("Invalid cookies JSON on stdin: expected an array of {name, value, ...} objects.\n");
@@ -535,8 +565,11 @@ async function cmdAccounts(args) {
     case "import":
       await cmdAccountsImport(args);
       break;
+    case "export":
+      await cmdAccountsExport(args);
+      break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set|import\n");
+      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set|import|export\n");
       process.exit(1);
   }
 }
