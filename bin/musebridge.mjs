@@ -3,10 +3,13 @@ import fs from "node:fs";
 import {
   acquire,
   addAccount,
+  busySlots,
   isLocked,
   listAccounts,
+  maxParallelOf,
   pickAccount,
   removeAccount,
+  setMaxParallel,
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
@@ -34,6 +37,8 @@ Commands:
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
   accounts refresh <id>     Export cookies from the signed-in Chrome profile
+  accounts set <id> --max-parallel <n>
+                            Set how many chats the account serves at once (1..50)
   login                     Sign in (adds account default when none exist)
   --help                    Show this help
 `;
@@ -275,7 +280,12 @@ async function cmdAccountsAdd(args) {
 
 async function cmdAccountsList(args) {
   const asJson = takeFlag(args, "--json");
-  const accounts = listAccounts().map((account) => ({ ...account, locked: isLocked(account.id) }));
+  const accounts = listAccounts().map((account) => ({
+    ...account,
+    locked: isLocked(account.id),
+    busy: busySlots(account.id),
+    max: maxParallelOf(account.id),
+  }));
   if (asJson) {
     process.stdout.write(`${JSON.stringify(accounts, null, 2)}\n`);
     return;
@@ -285,7 +295,7 @@ async function cmdAccountsList(args) {
     return;
   }
   for (const account of accounts) {
-    process.stdout.write(`${account.id}\t${account.label}\t${account.status}\n`);
+    process.stdout.write(`${account.id}\t${account.label}\t${account.status}\t${account.busy}/${account.max}\n`);
   }
 }
 
@@ -314,6 +324,22 @@ async function cmdAccountsCheck(args) {
       process.stdout.write(`${account.id}\t${signedIn ? "signed_in" : "signed_out"}\n`);
     });
   }
+}
+
+async function cmdAccountsSet(args) {
+  const raw = takeOption(args, "--max-parallel");
+  const id = args[0];
+  if (!id || raw === null) {
+    process.stderr.write("Usage: musebridge accounts set <id> --max-parallel <n>\n");
+    process.exit(1);
+  }
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1 || n > 50) {
+    process.stderr.write(`Bad --max-parallel value: ${raw} (expected an integer 1..50)\n`);
+    process.exit(1);
+  }
+  setMaxParallel(id, n);
+  process.stdout.write(`${id} maxParallel=${n}\n`);
 }
 
 async function cmdAccountsRefresh(args) {
@@ -347,8 +373,11 @@ async function cmdAccounts(args) {
     case "refresh":
       await cmdAccountsRefresh(args);
       break;
+    case "set":
+      await cmdAccountsSet(args);
+      break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh\n");
+      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set\n");
       process.exit(1);
   }
 }
