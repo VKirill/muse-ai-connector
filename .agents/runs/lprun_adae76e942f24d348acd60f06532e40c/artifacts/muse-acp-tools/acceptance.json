@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-acp-tools",
+  "task_sha256": "817b63d9f8e1cb2771d76ee9bf45782cd018cb9ee455bd3979ef26c805821697",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "b35524e4d4cbbbb5ba47f701227239c7ea5868fb3dd04d8b52f37940d1758709",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T03:29:37.850Z",
+  "model": "swe-2-high"
+}
