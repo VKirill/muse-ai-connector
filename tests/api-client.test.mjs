@@ -1,12 +1,19 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import zlib from "node:zlib";
 import { saveCookies } from "../bridge/cookies.mjs";
 import { chatStreamBody, createMuseClient, openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { decodeFrame, encodeResponse } from "../bridge/protocol/envelope.mjs";
-import { buildGatewayUrl } from "../bridge/protocol/gateway.mjs";
+import { bootstrapHttps, buildGatewayUrl, parseBootstrapFromHtml } from "../bridge/protocol/gateway.mjs";
 import { createStreamDecoder } from "../bridge/protocol/ndjson.mjs";
+
+const flightHtml = fs.readFileSync(
+  path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "muse-flight.html"),
+  "utf8",
+);
 
 async function withHome(fn) {
   const dir = fs.mkdtempSync("/tmp/muse-api-");
@@ -52,6 +59,43 @@ test("resolveTransport defaults to api and switches on flag or MUSE_TRANSPORT", 
   assert.equal(resolveTransport({ flag: "browser" }), "browser");
   assert.equal(resolveTransport({ env: { MUSE_TRANSPORT: "browser" } }), "browser");
   assert.equal(resolveTransport({ flag: "api", env: { MUSE_TRANSPORT: "browser" } }), "api");
+});
+
+test("parseBootstrapFromHtml reads vm context from escaped Next flight HTML", () => {
+  const parsed = parseBootstrapFromHtml(flightHtml);
+  assert.equal(parsed.vmId, "vm-123");
+  assert.equal(parsed.vmName, "name-1");
+  assert.equal(parsed.gatewayUrl, "wss://gw.example/");
+  assert.equal(parsed.authToken, "s0:abc");
+  assert.equal(parsed.notaryToken, "nt-1");
+});
+
+test("bootstrapHttps uses the page flight context and sends Origin/Referer on /api/ calls", async () => {
+  const seen = [];
+  const fakeFetch = async (url, opts = {}) => {
+    seen.push({
+      url: String(url),
+      headers: Object.fromEntries(Object.entries(opts.headers ?? {}).map(([k, v]) => [k.toLowerCase(), v])),
+    });
+    if (String(url).replace(/\/$/, "") === "https://muse.ai") {
+      return new Response(flightHtml, { status: 200, headers: { "content-type": "text/html" } });
+    }
+    return new Response('{"status":"ok"}', { status: 200, headers: { "content-type": "application/json" } });
+  };
+  const boot = await bootstrapHttps({ cookies: [], fetchImpl: fakeFetch });
+  assert.equal(boot.vmId, "vm-123");
+  assert.equal(boot.authToken, "s0:abc");
+  assert.equal(boot.notaryToken, "nt-1");
+  const apiCalls = seen.filter((s) => s.url.includes("/api/"));
+  assert.ok(apiCalls.length > 0);
+  for (const call of apiCalls) {
+    assert.equal(call.headers.origin, "https://muse.ai");
+    assert.equal(String(call.headers.referer ?? "").startsWith("https://muse.ai"), true);
+  }
+  assert.equal(
+    seen.some((s) => s.url.replace(/\/$/, "") === "https://muse.ai/api/hatch/token"),
+    false,
+  );
 });
 
 test("openTransport browser calls the fake browser driver and not the gateway", async () => {
