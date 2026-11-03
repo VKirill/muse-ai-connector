@@ -177,6 +177,8 @@ Tools (paths are relative to the workspace; absolute paths inside it also work):
 
 Rules: paths outside the workspace are refused; edit_file fails when 'old' matches zero or
 several times; outputs are capped at ~20 KB — read or grep narrower when a result is truncated.
+Reply in the language the user writes in, unless the project rules below say otherwise.
+Before changing files, read AGENTS.md or CLAUDE.md in the workspace when present and follow them.
 `;
   const names = (mcpToolNames ?? []).filter((n) => typeof n === "string" && n);
   if (!names.length) return header;
