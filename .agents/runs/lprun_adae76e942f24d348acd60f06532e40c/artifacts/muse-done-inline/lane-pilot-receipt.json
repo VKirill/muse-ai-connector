@@ -1,0 +1,147 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-done-inline",
+  "attemptId": "lpattempt_e2aa1a8499cc4f13bcc250163d501c67",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_9zfyha6ti3",
+  "ownsPaths": [
+    "bin/muse-acp.mjs",
+    "bridge/acp-tools.mjs",
+    "tests/acp-tools.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": "bin/muse-acp.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/acp-tools.mjs",
+      "windows": []
+    },
+    {
+      "path": "tests/acp-tools.test.mjs",
+      "windows": []
+    }
+  ],
+  "output": "Done. `stripDoneMarker` now treats a `[[done]]` token at the end of the reply — inline or on its own line — as the final-answer marker and strips it; a `[[done]]` earlier in the text is still not a marker. No changes needed in `bin/muse-acp.mjs` since the loop and pending-reply path already call it.\n\nChanged paths:\n- `bridge/acp-tools.mjs` — `DONE_LINE_RE` → `DONE_TAIL_RE` (tail-anchored, repeated-marker tolerant), updated `stripDoneMarker` and its doc comment\n- `tests/acp-tools.test.mjs` — `stripDoneMarker` import + 3 new cases: unit coverage of inline/own-line/mid-text, e2e inline marker → final + stripped (no nudge), e2e mid-text marker → nudge path (lands in `agent_thought_chunk`, not the message)\n\nVerification:\n- `node /tmp/muse-done-inline/check.mjs \"$PWD\"` → `OK`\n- `node --test tests/acp-tools.test.mjs` → 15 pass, 0 fail\n\n```plan-fact\n[\n {\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/acp-tools.mjs:115-126\",\"cmd:node /tmp/muse-done-inline/check.mjs \\\"$PWD\\\"\"]},\n {\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/acp-tools.test.mjs:334-396\",\"bridge/acp-tools.mjs:115-126\",\"cmd:node --test tests/acp-tools.test.mjs\"]}\n]\n```\n\nAPPROACH: widened the marker regex from \"whole last line\" to \"tail of the reply\" — `([ \\t]*\\*{0,2}\\[\\[done\\]\\]\\*{0,2})+[ \\t]*$` — so `text [[done]]` and `**[[done]]**` at the end strip cleanly while mid-text `[[done]]` returns null and keeps the nudge semantics.\n\nLESSON: a protocol marker that models tolerate \"at the end\" will appear inline as often as on its own line — anchoring the regex to end-of-reply once beats enumerating line-shape variants.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-done-inline/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "e9dd7f5247bb67680d02d377cdd5e42b9c2766f62ff38f7460ca82f17b1b13cc",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_4444f14753af49aa8a1fc98b4684b5de/muse-ai-connector",
+      "revision": {
+        "head": "e420ee4c0b174953218160ab4146d070fc54f480",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "node --test tests/acp-tools.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ parseToolCall: no block, one block, last block wins (1.238041ms)\r\n✔ buildIntro: the workspace is on the user's machine, reached only via muse-tool (0.186833ms)\r\n✔ parseToolCall: bad JSON is an error, not a crash (0.06125ms)\r\n✔ path guard: ../outside and absolute paths outside cwd are refused (0.389125ms)\r\n✔ edit_file: zero or two matches fails, exactly one applies (2.966ms)\r\n✔ tool loop: write_file then bash run in the session cwd, final reply streams clean (83.478208ms)\r\n✔ bad JSON block goes back to Muse as TOOL RESULT (error) (71.282792ms)\r\n✔ client that announced fs.writeTextFile receives fs/write_text_file instead of a local write (70.923334ms)\r\n✔ the loop stops at MUSE_MAX_TOOL_ROUNDS with a message (70.965083ms)\r\n✔ a block-less reply gets one nudge; the second block-less reply ends the turn (69.568834ms)\r\n✔ a nudge leads to a tool call, then [[done]] ends the turn and is stripped (71.648375ms)\r\n✔ '**[[done]]**' on the last line is accepted and stripped (69.649667ms)\r\n✔ stripDoneMarker: inline at the end of the last line counts, mid-text does not (0.229625ms)\r\n✔ a trailing inline [[done]] ends the turn and is stripped before reaching BB (67.87775ms)\r\n✔ a [[done]] in mid-text is not a marker and gets the nudge (69.627042ms)\r\nℹ tests 15\r\nℹ suites 0\r\nℹ pass 15\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 714.266625\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "73cb09bffcf53dfafce703f3de226fed40208ea953d2ea49384ca9db649a8bad",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_4444f14753af49aa8a1fc98b4684b5de/muse-ai-connector",
+      "revision": {
+        "head": "e420ee4c0b174953218160ab4146d070fc54f480",
+        "dirty": 2
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "a4faa264fb88447da6e494933048a66648453935a9f957d8d54a6b5fe4ce9083",
+      "sentPlanSha256": null,
+      "sourceLength": 2313,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_e2aa1a8499cc4f13bcc250163d501c67",
+      "threadId": "thr_9zfyha6ti3",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-acp»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T10:00 muse-bb-context: Pass project rules, owner rules and language from BB's system block to Muse. Muse working in a BB project follows the project's and the owner's rules without getting BB's whole system block.\n- 2026-11-03T03:35 muse-acp-mcp: muse-acp: MCP servers from session/new and skills as tools. Muse in a BB chat calls the MCP servers BB passes in (bb-bridge, MetaMCP...) and finds and reads skills on demand.\n- 2026-11-03T03:30 muse-acp-tools: muse-acp: local tool loop (files, edit, grep, bash) via muse-tool blocks. Muse in a BB chat reads and edits files in the thread workspace and runs commands through a local tool loop.\n- 2026-11-03T01:12 muse-auto-approve: Muse: auto «Always allow» on approval cards (money excepted), long reply timeout. Muse never stalls on an approval card in a chat the connector drives: it is answered «Always allow» at once, money cards go to the owner.\n- 2026-11-03T00:14 muse-acp-pending-wait: Muse ACP: wait for the interrupted turn's reply before the next prompt. When BB interrupts a Muse turn, the reply Muse goes on writing still reaches BB at the start of the next turn.\n- 2026-11-03T00:04 muse-acp-prompt-fix: Muse ACP: strip BB system instructions, keep one Muse chat and the reply across interrupts. A BB chat on provider Muse sends Muse only the user's words and shows every Muse reply, in one Muse chat per BB thread.\nFiles of this area: bin/muse-acp.mjs, bridge/acp-prompt.mjs, bridge/acp-tools.mjs, tests/acp-prompt.test.mjs, bridge/acp-mcp.mjs, bridge/acp-skills.mjs, tests/acp-mcp.test.mjs, tests/acp-skills.test.mjs, tests/fixtures/fake-mcp.mjs, tests/acp-tools.test.mjs, README.md, bench/deepswe/relay.mjs, bin/musebridge.mjs, bridge/permissions.mjs, bridge/session.mjs, tests/bench-relay.test.mjs, tests/cli.test.mjs, tests/fixtures/permission-card.html, tests/permissions.test.mjs, bridge/acp-pending.mjs, tests/acp-pending.test.mjs, tests/acp-cancel.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.",
+        "rulesPicked": {
+          "total": 16,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- bin/muse-acp.mjs L1-L489 (sha256 5beb3320)\n- bridge/acp-tools.mjs L1-L399 (sha256 33000f8c)",
+        "executionPacketSha256": "4c9a01a8f0c007a947488bf27010fe08654b142b4ffaffd5d3b5c75af7defcde",
+        "pmReadContext": "{\"summary\":\"This packet covers the task 'muse-acp-done-marker', aimed at ensuring a Muse agent in BB does not abandon tasks prematurely when it omits a tool block in an intermediate reply. In `bin/muse-acp.mjs`, `runPrompt` orchestrates the dialogue loop with Muse. Currently, when `parseToolCall(result.text)` returns `kind: 'none'`, the loop immediately treats `result.text` as the final answer, emits an `agent_message_chunk` with `call.text`, and exits with `{ stopReason: 'end_turn' }`. If Muse emits an intermediate thought without a tool block (such as 'Читаю math.js.'), the turn terminates prematurely. The objective is to introduce a nudge mechanism for block-less replies, allowing Muse to resume tool calling, alongside support for an explicit completion marker ('[[done]]' or '**[[done]]**'). In `bridge/acp-tools.mjs`, `parseToolCall` extracts the last '```muse-tool' fenced JSON block and thought text, while `buildIntro` constructs the system instructions telling Muse how to interact via tool blocks. According to the contract invariants and acceptance criteria, `[[done]]` and raw tool blocks must never reach `agent_message_chunk`, at most 2 nudges in a row are allowed, two consecutive block-less replies must terminate the turn with the second reply's text after exactly one nudge, '**[[done]]**' on the last line must be stripped, and `buildIntro` must remain under 8 KB.\",\"keyFacts\":[\"bin/muse-acp.mjs: `runPrompt` loops over `driver.send(...)` and evaluates each reply with `parseToolCall(result.text)`.\",\"bin/muse-acp.mjs: When `call.kind === 'none'`, `runPrompt` currently streams `call.text` to BB via `agent_message_chunk` and terminates with `{ stopReason: 'end_turn' }`.\",\"bin/muse-acp.mjs: When `call.kind === 'call'`, `call.thought` is emitted as an `agent_thought_chunk`, `runTool` is executed, and `toSend` is updated with `resultMessage(...)`.\",\"bin/muse-acp.mjs: Tool rounds are capped by `MAX_TOOL_ROUNDS` (derived from `MUSE_MAX_TOOL_ROUNDS` env var, default 60).\",\"bin/muse-acp.mjs: Session state tracks `id`, `accountId`, `museChatId`, `cwd`, `cancelled`, `pendingReply`, and `mcp`.\",\"bridge/acp-tools.mjs: `parseToolCall` uses regex `TOOL_BLOCK_RE` to find the last ```muse-tool block and returns `{ kind: 'none', text }` if none is found.\",\"bridge/acp-tools.mjs: `buildIntro` currently instructs Muse: 'A reply with no muse-tool block is your final answer to the user.'\",\"bridge/acp-tools.mjs: `INTRO_BUDGET` is set to 7000 characters to keep the intro within sizing limits.\",\"bridge/acp-tools.mjs: `OUTPUT_CAP` is defined as 20 * 1024 (20 KB) for tool output truncation.\"],\"openQuestions\":[\"What exact wording or format is expected for the nudge message sent to Muse when a block-less reply lacks `[[done]]`?\",\"How should `[[done]]` and markdown variants like `**[[done]]**` be parsed and stripped (e.g., inside `parseToolCall` or via a dedicated helper)?\",\"Should intermediate text from a nudged block-less reply be emitted to BB as an `agent_thought_chunk` or held back until a final answer?\",\"How does `bridge/acp-tools.mjs` conclude after line 399, which was truncated in the host-read excerpt?\",\"What specific test assertions are present in `tests/acp-tools.test.mjs`, which was not included in the host-read excerpt?\",\"Does `/tmp/muse-nudge/check.mjs` check for exact nudge phrasing or only the conversational sequence leading to writing `hello.txt`?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 11729,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_ad9fde9429d91a6a",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "warnings": [
+    "the writer changed tests that existed before the attempt (reference tests): tests/acp-tools.test.mjs — the code critic reviews them in gate mode"
+  ],
+  "turns": 1
+}

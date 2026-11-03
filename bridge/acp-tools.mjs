@@ -112,17 +112,17 @@ export function parseToolCall(reply) {
   return { kind: "call", name, args, thought };
 }
 
-const DONE_LINE_RE = /^[ \t]*\*{0,2}\[\[done\]\]\*{0,2}[ \t]*$/i;
+const DONE_TAIL_RE = /([ \t]*\*{0,2}\[\[done\]\]\*{0,2})+[ \t]*$/i;
 
 /**
- * The final-answer marker: if the reply ends with a [[done]] line, returns the
- * text with that line stripped; otherwise null.
+ * The final-answer marker: if the reply ends with a [[done]] marker — on its own
+ * line or at the end of the last line — returns the text with the marker
+ * stripped; otherwise null. A [[done]] earlier in the text is not a marker.
  */
 export function stripDoneMarker(reply) {
   const trimmed = String(reply ?? "").replace(/\s+$/, "");
-  const nl = trimmed.lastIndexOf("\n");
-  if (!DONE_LINE_RE.test(trimmed.slice(nl + 1))) return null;
-  return trimmed.slice(0, nl + 1).replace(/\s+$/, "");
+  if (!DONE_TAIL_RE.test(trimmed)) return null;
+  return trimmed.replace(DONE_TAIL_RE, "").replace(/\s+$/, "");
 }
 
 export function resultMessage(name, ok, output) {
