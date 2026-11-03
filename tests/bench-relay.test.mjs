@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPrompt, isDone, relayOnce } from "../bench/deepswe/relay.mjs";
+import { buildPrompt, isDone, relayOnce, sendArgs } from "../bench/deepswe/relay.mjs";
 
 test("buildPrompt names the ssh target, the task text and DONE", () => {
   const prompt = buildPrompt({
@@ -50,6 +50,23 @@ test("relayOnce continues in the same chat until DONE, then writes done", async 
   assert.equal(dones[0].session, "s1");
   assert.equal(dones[0].result.status, "done");
   assert.equal(dones[0].result.summary, "fixed. DONE");
+});
+
+test("sendArgs passes --timeout from MUSE_RELAY_REPLY_TIMEOUT_SEC (default 5400)", () => {
+  const def = sendArgs({ text: "hello" });
+  assert.deepEqual(def.slice(1, 5), ["send", "--json", "--timeout", "5400"]);
+
+  process.env.MUSE_RELAY_REPLY_TIMEOUT_SEC = "900";
+  try {
+    const args = sendArgs({ chatId: "chat-9", text: "hi" });
+    assert.ok(args.includes("--timeout"));
+    assert.equal(args[args.indexOf("--timeout") + 1], "900");
+    assert.ok(args.includes("--chat"));
+    assert.equal(args[args.indexOf("--chat") + 1], "chat-9");
+    assert.equal(args[args.length - 1], "hi");
+  } finally {
+    delete process.env.MUSE_RELAY_REPLY_TIMEOUT_SEC;
+  }
 });
 
 test("relayOnce gives up after maxContinues", async () => {

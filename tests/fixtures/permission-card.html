@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <body>
+    <main class="chat">
+      <div class="approval-card" id="tailscale-card">
+        <div class="approval-title">Allow Muse to join a Tailscale network in Tailscale?</div>
+        <details>
+          <summary>Request</summary>
+          <div class="approval-details">Registers this device with its configured login server</div>
+        </details>
+        <div class="approval-actions">
+          <button data-action="deny">Deny</button>
+          <button data-action="allow">Allow</button>
+          <button data-action="always">Always allow</button>
+        </div>
+      </div>
+
+      <div class="approval-card" id="purchase-card">
+        <div class="approval-title">Allow Muse to make a purchase in Shop?</div>
+        <details>
+          <summary>Request</summary>
+          <div class="approval-details">Charges your card $25</div>
+        </details>
+        <div class="approval-actions">
+          <button data-action="deny">Deny</button>
+          <button data-action="allow">Allow</button>
+          <button data-action="always">Always allow</button>
+        </div>
+      </div>
+
+      <div class="approval-card" id="calendar-card">
+        <div class="approval-title">Allow Muse to read your calendar?</div>
+        <div class="approval-actions">
+          <button data-action="deny">Deny</button>
+          <button data-action="allow">Allow</button>
+        </div>
+      </div>
+
+      <p class="composer-note">
+        Approval required. Sending is paused until you approve or deny the request above.
+      </p>
+      <textarea></textarea>
+    </main>
+    <script>
+      document.querySelectorAll(".approval-card button").forEach((button) => {
+        button.addEventListener("click", () => {
+          button.closest(".approval-card").dataset.answered = button.dataset.action;
+        });
+      });
+    </script>
+  </body>
+</html>

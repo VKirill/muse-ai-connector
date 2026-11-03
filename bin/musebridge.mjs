@@ -21,8 +21,11 @@ Commands:
                             List side chats
   history [--account <id>] <chatId> [--json]
                             Show a chat transcript
-  send [--account <id>] [--chat <id>] [--headed] [--json] <text>
+  send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>
                             Send a message and print the reply
+  approve [--account <id>] --chat <id>
+                            Answer pending approval cards (Always allow;
+                            cards about money are left to you)
   accounts list [--json]    List Muse accounts
   accounts add <label>      Register an account and open a sign-in window
   accounts remove <id> [--purge]
@@ -152,10 +155,16 @@ async function cmdSend(args) {
   const asJson = takeFlag(args, "--json");
   const headed = takeFlag(args, "--headed");
   const chatId = takeOption(args, "--chat");
+  const timeoutSec = takeOption(args, "--timeout");
   const accountFlag = takeOption(args, "--account");
   const text = args.join(" ").trim();
   if (!text) {
-    process.stderr.write("Usage: musebridge send [--account <id>] [--chat <id>] [--headed] [--json] <text>\n");
+    process.stderr.write("Usage: musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>\n");
+    process.exit(1);
+  }
+  const timeoutMs = timeoutSec ? Math.max(1, Number(timeoutSec)) * 1000 : undefined;
+  if (timeoutSec && !Number.isFinite(timeoutMs)) {
+    process.stderr.write(`Bad --timeout value: ${timeoutSec}\n`);
     process.exit(1);
   }
   const accountId = accountFlag || pickAccount().id;
@@ -167,6 +176,7 @@ async function cmdSend(args) {
       const result = await session.send({
         chatId: chatId || undefined,
         text,
+        timeoutMs,
         onDelta: asJson
           ? undefined
           : (suffix) => {
@@ -175,6 +185,37 @@ async function cmdSend(args) {
       });
       if (!asJson) process.stdout.write("\n");
       else process.stdout.write(`${JSON.stringify({ chatId: result.chatId, messageId: result.messageId, text: result.text })}\n`);
+    });
+  } finally {
+    release();
+  }
+}
+
+async function cmdApprove(args) {
+  const chatId = takeOption(args, "--chat");
+  const accountFlag = takeOption(args, "--account");
+  if (!chatId) {
+    process.stderr.write("Usage: musebridge approve [--account <id>] --chat <id>\n");
+    process.exit(1);
+  }
+  const accountId = accountFlag || pickAccount().id;
+  const release = acquire(accountId, { owner: "musebridge-approve" });
+  try {
+    touch(accountId);
+    await withSession({ accountId, headless: true }, async (session) => {
+      await requireSignedIn(session, accountId);
+      const handled = await session.approve(chatId);
+      if (handled.length === 0) {
+        process.stdout.write("No pending approval cards.\n");
+        return;
+      }
+      for (const card of handled) {
+        if (card.decision === "ask") {
+          process.stdout.write(`left for you: ${card.title}\n`);
+        } else {
+          process.stdout.write(`always allow: ${card.title}\n`);
+        }
+      }
     });
   } finally {
     release();
@@ -302,6 +343,9 @@ async function main(argv) {
       break;
     case "send":
       await cmdSend(args);
+      break;
+    case "approve":
+      await cmdApprove(args);
       break;
     case "accounts":
       await cmdAccounts(args);

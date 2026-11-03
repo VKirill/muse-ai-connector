@@ -104,10 +104,20 @@ async function writeDone(session, result) {
   await ssh("printf %s '" + payload + "' | base64 -d > '" + QUEUE_DIR + "/" + session + ".done'");
 }
 
-async function send({ chatId, text }) {
-  const args = [MUSEBRIDGE, "send", "--json"];
+export function replyTimeoutSec() {
+  const value = Number(process.env.MUSE_RELAY_REPLY_TIMEOUT_SEC ?? "5400");
+  return Number.isFinite(value) && value >= 1 ? value : 5400;
+}
+
+export function sendArgs({ chatId, text }) {
+  const args = [MUSEBRIDGE, "send", "--json", "--timeout", String(replyTimeoutSec())];
   if (chatId) args.push("--chat", chatId);
   args.push(text);
+  return args;
+}
+
+async function send({ chatId, text }) {
+  const args = sendArgs({ chatId, text });
   const { stdout } = await execFileP(process.execPath, args, {
     encoding: "utf8",
     maxBuffer: 64 * 1024 * 1024,

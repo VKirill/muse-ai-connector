@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-auto-approve",
+  "task_sha256": "44e2793c7531e19e6981e2768efa72a42e30754f9f59d5143f3200935e623a4f",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "f5649d3f7685ef56ee0447403e03e5ba2a8376246f030e09e23c867615ca9e1c",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T01:12:28.439Z",
+  "model": "swe-2-high"
+}

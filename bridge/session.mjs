@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import { chromium } from "playwright-core";
 import { findUserMessage, parseChatList, parseTranscript, replyState } from "./cache.mjs";
+import { answerPermissionCards } from "./permissions.mjs";
 import { profileDir } from "./paths.mjs";
 
 const MUSE_ORIGIN = "https://muse.ai";
@@ -166,15 +167,28 @@ export async function openSession({ accountId = "default", headless = true } = {
     await page.keyboard.press("Enter");
 
     let resolvedChatId = chatId ?? null;
-    const deadline = Date.now() + timeoutMs;
+    let deadline = Date.now() + timeoutMs;
     let lastText = "";
     let userMessageId = null;
+    const askedCards = new Set();
 
     while (Date.now() < deadline) {
       if (isCancelled?.()) {
         const err = new Error("cancelled");
         err.code = "cancelled";
         throw err;
+      }
+      const cards = await answerPermissionCards(page, {
+        log: (line) => process.stderr.write(`${line}\n`),
+        onAsk: ({ title, details }) => {
+          const key = `${title}|${details}`;
+          if (askedCards.has(key)) return;
+          askedCards.add(key);
+          onDelta?.(`\nMuse asks for approval: ${title} — answer it in Muse\n`);
+        },
+      });
+      if (cards.some((card) => card.decision === "ask")) {
+        deadline = Date.now() + timeoutMs;
       }
       if (!resolvedChatId) {
         const match = page.url().match(/\/thread\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
@@ -215,9 +229,35 @@ export async function openSession({ accountId = "default", headless = true } = {
     throw replyTimeoutError();
   }
 
+  /**
+   * Opens a chat and answers pending approval cards by policy
+   * («Always allow», money cards left to the owner).
+   * @param {string} chatId
+   * @param {{ waitMs?: number }} [opts]
+   */
+  async function approve(chatId, { waitMs = 15_000 } = {}) {
+    await page.goto(`${MUSE_ORIGIN}/thread/${chatId}`, { waitUntil: "domcontentloaded" });
+    await waitSignedInSignals(page, SIGN_IN_MS);
+    const deadline = Date.now() + waitMs;
+    const handled = new Map();
+    let stable = 0;
+    while (Date.now() < deadline && stable < 6) {
+      const cards = await answerPermissionCards(page, {
+        log: (line) => process.stderr.write(`${line}\n`),
+      });
+      const before = handled.size;
+      for (const card of cards) {
+        handled.set(`${card.title}|${card.details}`, card);
+      }
+      stable = handled.size === before ? stable + 1 : 0;
+      await sleep(POLL_MS);
+    }
+    return [...handled.values()];
+  }
+
   async function close() {
     await context.close();
   }
 
-  return { isSignedIn, waitForSignIn, listChats, history, send, close };
+  return { isSignedIn, waitForSignIn, listChats, history, send, approve, close };
 }

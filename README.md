@@ -48,12 +48,15 @@ musebridge accounts check [<id>]
 musebridge accounts remove <id> [--purge]
 musebridge chats [--account <id>] [--json]
 musebridge history [--account <id>] <chatId> [--json]
-musebridge send [--account <id>] [--chat <id>] [--headed] [--json] <text>
+musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>
+musebridge approve [--account <id>] --chat <id>
 musebridge login
 muse-acp                          # ACP agent on stdio (BB launches this)
 ```
 
 `accounts list --json` includes `locked` when a prompt holds that account.
+
+When Muse shows an approval card («Allow Muse to …?») in a chat the connector drives, the connector answers **Always allow** itself and keeps waiting — `send` no longer stalls on the card. Cards about money (a purchase, a payment, a subscription) are never touched; the reply notes «Muse asks for approval» and waits for you to answer in Muse. `musebridge approve --chat <id>` answers pending cards in an existing chat. `send --timeout <sec>` sets the reply timeout (default 180).
 
 ## Limits
 
@@ -67,6 +70,8 @@ This is a UI-driven connector. It breaks when Muse changes its page or the `hatc
 
 **Аккаунты** (Настройки → Плагины → Muse): видно Chrome, мост, агент и список аккаунтов. «Добавить аккаунт» открывает Chrome для входа. «Проверить» обновляет статус. «Удалить» снимает запись; галочка «Удалить профиль Chrome» ещё и стирает каталог профиля. «Занят» значит, что на аккаунте сейчас идёт запрос.
 
-**CLI:** `musebridge doctor`, `accounts list|add|check|remove`, `chats`, `history`, `send`, `login`. У `list --json` есть поле `locked`.
+**CLI:** `musebridge doctor`, `accounts list|add|check|remove`, `chats`, `history`, `send` (флаг `--timeout <сек>`, по умолчанию 180), `approve`, `login`. У `list --json` есть поле `locked`.
+
+Когда Muse показывает карточку одобрения («Разрешить Muse …?») в чате, которым управляет коннектор, коннектор сам отвечает «Всегда разрешать». Карточки про деньги (покупка, оплата, подписка) не трогаются — ответ помечается «Muse asks for approval» и ждёт вашего решения в Muse. `musebridge approve --chat <id>` отвечает на ожидающие карточки в существующем чате.
 
 **Ограничения:** управление через интерфейс сайта; смена вёрстки Muse или схемы кэша (проверяется schemaVersion 4) ломает шаг. Один профиль Chrome на аккаунт; параллельно несколько аккаунтов, но один запрос на аккаунт. Нужен Google Chrome. У Muse нет переключателя рассуждения: уровни BB принимаются, чтобы композитор не падал, и агент их игнорирует.
