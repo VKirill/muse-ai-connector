@@ -2,6 +2,7 @@
 title: Muse as a full BB agent (tools, MCP, skills, Lane Pilot writer)
 status: building
 started: 2026-11-03
+updated: 2026-11-03
 ---
 
 # Muse as a full BB agent
@@ -66,3 +67,7 @@ Muse cannot call our tools natively (node.register is unproven; see muse-nodes.m
 - node.register spike: if Muse calls commands of a registered node, swap the text protocol for native calls.
 - Lane Pilot writer trial on a low-risk task with the Muse provider.
 - Server identity check for the Noise channel.
+
+## History
+### 2026-11-03
+- Both build tasks done: `muse-acp-tools` (merge `6b3ccdf`) — the local tool loop per the protocol above (`bridge/acp-tools.mjs`, thoughts stream as `agent_thought_chunk`, path guard, capped output, fs/* via the ACP client when announced); `muse-acp-mcp` (merge `f65b096`) — session MCP servers as `mcp__<server>__<tool>` tools and `list_skills`/`read_skill` (`bridge/acp-mcp.mjs`, `bridge/acp-skills.mjs`, a failing server skipped). `npm test` green (92 pass) + `tsc --noEmit` clean at merge head `f65b096`; the live check in a real BB chat stays with the owner. The "Later" items remain open.
