@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-runtime-install",
+  "task_sha256": "1f89167d03dc713adcae7117bc6354ab356dfdb5b759d386c382a098c1c19c21",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "a697bead4278d9454a0981aed8669ecedc17533067448ea33777e26d0b609e41",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T12:44:14.056Z",
+  "model": "swe-2-high"
+}

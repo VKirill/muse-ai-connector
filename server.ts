@@ -11,6 +11,15 @@ const accountRow = z.object({
   lastCheckedAt: z.string(),
 });
 
+const runtimeState = z.object({
+  installed: z.boolean(),
+  version: z.string().nullable(),
+  path: z.string().nullable(),
+  dev: z.string().nullable(),
+  installing: z.boolean(),
+  error: z.string().nullable(),
+});
+
 const hostStatus = z.object({
   platform: z.string(),
   chromeFound: z.boolean(),
@@ -18,6 +27,7 @@ const hostStatus = z.object({
   bridgeFound: z.boolean(),
   bridgeVersion: z.string().nullable(),
   agentFound: z.boolean(),
+  runtime: runtimeState,
   accounts: z.array(accountRow),
   problems: z.array(z.string()),
 });
@@ -36,6 +46,7 @@ const hostContract = defineRpcContract({
   addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
+  installRuntime: { input: z.object({}).strict(), output: hostStatus },
 });
 
 export const rpcContract = defineRpcContract({
@@ -43,17 +54,27 @@ export const rpcContract = defineRpcContract({
   addAccount: { input: z.object({ hostId: z.string(), label: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   checkAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   removeAccount: { input: z.object({ hostId: z.string(), id: z.string(), purge: z.boolean() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
+  installRuntime: { input: z.object({ hostId: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
 });
 
 export const MUSE_PROVIDER_ID = "muse";
 export const MUSE_AGENT_COMMAND = "muse-acp";
 
+function defaultLaunchSpec() {
+  return {
+    displayName: "Muse",
+    command: "/bin/sh",
+    args: ["-c", 'exec "$HOME/.muse-bridge/bin/muse-acp" "$@"', MUSE_AGENT_COMMAND],
+    env: {},
+  };
+}
+
 const SETTINGS = {
   agentCommand: {
     type: "string",
     label: "Agent command",
-    description: "Command that starts the Muse agent on the host. Change it only if muse-acp is not on the host daemon's PATH (use an absolute path).",
-    default: MUSE_AGENT_COMMAND,
+    description: "Command that starts the Muse agent on the host. Leave empty to use the runtime the plugin installs (~/.muse-bridge/bin/muse-acp); set an absolute path only to override it.",
+    default: "",
   },
   headless: {
     type: "boolean",
@@ -91,16 +112,16 @@ export default function plugin(bb: BbPluginApi): void {
     },
     experimental_visibility: "installed",
     experimental_bridgeOptions: {
-      acpLaunchSpec: { displayName: "Muse", command: MUSE_AGENT_COMMAND, args: [], env: {} },
+      acpLaunchSpec: defaultLaunchSpec(),
     },
     deriveProviderOptions(ctx) {
-      const command = String(ctx.settings.agentCommand ?? "").trim() || MUSE_AGENT_COMMAND;
+      const command = String(ctx.settings.agentCommand ?? "").trim();
+      const spec = command
+        ? { displayName: "Muse", command, args: [] as string[], env: {} }
+        : defaultLaunchSpec();
       return {
         acpLaunchSpec: {
-          displayName: "Muse",
-          command,
-          args: [],
-          env: {},
+          ...spec,
           permissionCli: { full: ["--bb-permission=full"], workspaceWrite: ["--bb-permission=accept-edits"] },
         } as JsonValue,
       };
@@ -192,6 +213,9 @@ export default function plugin(bb: BbPluginApi): void {
     },
     removeAccount({ hostId, id, purge }) {
       return oneHost(hostId, (hid) => host.call("removeAccount", { id, purge }, { hostId: hid }));
+    },
+    installRuntime({ hostId }) {
+      return oneHost(hostId, (hid) => host.call("installRuntime", {}, { hostId: hid }));
     },
   });
 }

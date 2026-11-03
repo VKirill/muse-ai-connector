@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-runtime-install",
+  "attemptId": "lpattempt_36158d618ad24699947b0d72d96b1a59",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_u7brfxvazj",
+  "ownsPaths": [
+    "bridge/runtime-install.mjs",
+    "host.ts",
+    "server.ts",
+    "tests/runtime-install.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": ".agents/plans/muse-packaging.md",
+      "windows": []
+    },
+    {
+      "path": "host.ts",
+      "windows": []
+    },
+    {
+      "path": "server.ts",
+      "windows": []
+    },
+    {
+      "path": "bin/musebridge",
+      "windows": []
+    },
+    {
+      "path": "package.json",
+      "windows": []
+    }
+  ],
+  "output": "All checks pass. Summary of the change:\n\n**`bridge/runtime-install.mjs`** (new, plain ESM, Node built-ins only):\n- `runtimeStatus({home})` → `{installed, version, path, dev}` by resolving `~/.muse-bridge/runtime/current` and validating `bin/musebridge.mjs` exists; `dev` from `MUSE_RUNTIME_DEV` or `~/.muse-bridge/bin/.dev`.\n- `installRuntime({version, home, source, run})` → `{ok, version, path, error?}`:\n  - `dir:<path>` copies a checkout minus `.git`, `.bb`, `node_modules`, `bench/runs`; default fetches `codeload.github.com/.../tar.gz/refs/tags/v<version>` → `tar --strip-components=1`.\n  - Atomic: builds in `<version>.tmp-<pid>`, `chmod`s the staged tree writable (worktree files are `0444` — npm needs to write `package-lock.json`), runs `npm install --omit=dev --no-audit --no-fund` via injectable `run`, renames on success. Failure → `{ok:false}` + tmp cleanup + previous runtime intact.\n  - Writes POSIX shims `~/.muse-bridge/bin/{musebridge,muse-acp}` (0755) that follow their own symlink, prefer `.dev`/`MUSE_RUNTIME_DEV` at exec time, find node like `bin/musebridge` (homebrew → /usr/local → /usr/bin → PATH) and `exec node <target>/bin/<tool>.mjs \"$@\"`.\n  - Repoints `current` symlink, prunes to last 2 versions by mtime, clears stale `.tmp-*` dirs.\n\n**`host.ts`**: `runtime` block in status (`installed/version/path/dev/installing/error`); `ensureRuntime()` auto-installs once per process in the background when missing or version ≠ `pluginVersion()` (skipped on dev override / Windows); `installRuntime` handler forces and awaits; `findCommand` prefers `~/.muse-bridge/bin`; Windows reports unsupported in `problems`.\n\n**`server.ts`**: `runtime` mirrored into `hostStatus`; `installRuntime {hostId}` RPC forwarded via `oneHost`; empty **Agent command** → `/bin/sh -c 'exec \"$HOME/.muse-bridge/bin/muse-acp\" \"$@\"' \"muse-acp\"` (permission flags still append as `\"$@\"`), a set value launches it as today; setting default changed to `\"\"`.\n\n**`tests/runtime-install.test.mjs`** (new): 6 hermetic tests — dir: install + working shims, reinstall no-op, failed npm leaves no build dir and keeps old runtime, prune keeps 2, `.dev` and `MUSE_RUNTIME_DEV` overrides.\n\nVerified: `node /tmp/muse-runtime/check.mjs \"$PWD\"` → `OK`; `node --test tests/runtime-install.test.mjs` → 6/6; `npm run typecheck` → 0; full suite 133/133.\n\n```plan-fact\n[\n {\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/runtime-install.mjs:177-221\",\"bridge/runtime-install.mjs:114-147\",\"cmd:node /tmp/muse-runtime/check.mjs \\\"$PWD\\\"\"]},\n {\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/runtime-install.test.mjs\",\"cmd:node --test tests/runtime-install.test.mjs\"]},\n {\"item\":3,\"status\":\"done\",\"evidence\":[\"server.ts:63-70\",\"server.ts:115-126\",\"cmd:npm run typecheck\"]}\n]\n```\n\nAPPROACH: Implemented piece A of muse-packaging as specified — a dependency-free installer module bundled into host.mjs, runtime lookup first in `~/.muse-bridge/bin` then PATH, background auto-install once per host process, and a forced `installRuntime` RPC end-to-end. Decided myself: shims resolve the dev override at exec time (so auto-install never clobbers a dev checkout), `npm` is resolved next to `process.execPath` before falling back to PATH, and the staged tree is `chmod +w`'d because lane worktrees ship `0444` files.\n\nLESSON: Files copied with `fs.cpSync` keep the source mode — Lane Pilot worktrees are `0444`, so `npm install` fails EACCES on `package-lock.json` unless the staged copy is made writable first.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-runtime/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "c911629b944957eb4fd0429a2a9b5f215418f77887dc8d93cef6ec33c923ad65",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_36158d618ad24699947b0d72d96b1a59/muse-ai-connector",
+      "revision": {
+        "head": "8361c08039d4873be6ca06c2a2afc32f5679e4d7",
+        "dirty": 4
+      }
+    },
+    {
+      "command": "node --test tests/runtime-install.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ installRuntime from dir: builds runtime/<v>, current link and working shims (395.902459ms)\r\n✔ reinstall of the same version is a no-op (2.079084ms)\r\n✔ a failing npm install returns ok:false, leaves no build dir and keeps the old runtime (2.431625ms)\r\n✔ only the last 2 versions are kept (4.59075ms)\r\n✔ a .dev file points the shims at the given checkout (398.788667ms)\r\n✔ MUSE_RUNTIME_DEV points the shims at the given checkout (365.380625ms)\r\nℹ tests 6\r\nℹ suites 0\r\nℹ pass 6\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 1232.234416\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "02030e109a288e77ff74b5cc618b8dbf0a413d1e94dd1a740988118cf7a056a6",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_36158d618ad24699947b0d72d96b1a59/muse-ai-connector",
+      "revision": {
+        "head": "8361c08039d4873be6ca06c2a2afc32f5679e4d7",
+        "dirty": 4
+      }
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-muse@0.1.1 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.1\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "a186b87b571c9b61183e67ee53752a989cc50245d159ef9d6de4b2ab1d0634e1",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_36158d618ad24699947b0d72d96b1a59/muse-ai-connector",
+      "revision": {
+        "head": "8361c08039d4873be6ca06c2a2afc32f5679e4d7",
+        "dirty": 4
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "fe3c1e1cd4181a17b4fb2f66436528e727650a3811ed637cbdf8e770bab4310f",
+      "sentPlanSha256": null,
+      "sourceLength": 2242,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_36158d618ad24699947b0d72d96b1a59",
+      "threadId": "thr_u7brfxvazj",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.",
+        "rulesPicked": {
+          "total": 16,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- .agents/plans/muse-packaging.md L1-L72 (sha256 52f30b39)\n- host.ts L1-L171 (sha256 6a8acb9f)\n- server.ts L1-L198 (sha256 d1e487b0)\n- bin/musebridge L1-L15 (sha256 8f248e90)\n- package.json L1-L43 (sha256 1338131b)",
+        "executionPacketSha256": "ebd5837432e43268f6f0c3ffd7ee49ec90ef174940a523841bf64d5d83e981ef",
+        "pmReadContext": "{\"summary\":\"This task ('muse-runtime-install') enables the Muse BB plugin to automatically install and maintain its CLI runtime ('musebridge') and ACP agent ('muse-acp') across all connected BB machines. Currently, BB host daemons only receive the bundled 'host.mjs' artifact; the 'bin/', 'bridge/', and 'node_modules' directories are not distributed to remote hosts. On machines such as remote Linux servers (e.g. OVH), the host daemon's PATH lacks '~/.local/bin', leaving the CLI and agent missing unless manually cloned and configured.\\n\\nTo solve this, the task introduces a self-install mechanism implemented in 'bridge/runtime-install.mjs', bundled into 'host.mjs', and exposed through host RPC handlers and provider launch configurations:\\n\\n1. Runtime Installation Engine ('bridge/runtime-install.mjs'):\\n- Implements two primary interfaces: 'runtimeStatus({home})' and 'installRuntime({version, home, source, run})'.\\n- Directory Layout: Installs runtime versions into '~/.muse-bridge/runtime/<version>/', sets a symlink at '~/.muse-bridge/runtime/current' pointing to the active version, and places executable POSIX shell shims at '~/.muse-bridge/bin/musebridge' and '~/.muse-bridge/bin/muse-acp'. Shims resolve Node similarly to existing launchers and execute 'exec node <runtime>/bin/<tool>.mjs \\\"$@\\\"'.\\n- Source Handling: Defaults to fetching tarballs from GitHub tags ('https://codeload.github.com/VKirill/muse-ai-connector/tar.gz/refs/tags/v<version>'), with support for 'dir:<path>' to copy local checkouts for testing and local development.\\n- Atomicity & Rollback: Installs build inside a temporary directory ('<version>.tmp-<pid>'), runs 'npm install --omit=dev', and renames atomically upon completion. If installation fails, it returns '{ok: false}', cleans up temporary build directories, and leaves any previous runtime functioning.\\n- Retention: Automatically prunes older versions, retaining only the last 2 installed versions.\\n- Development Override: If '~/.muse-bridge/bin/.dev' exists or 'MUSE_RUNTIME_DEV' is set, shims point directly to the designated checkout and auto-installation is bypassed.\\n\\n2. Host Integration ('host.ts'):\\n- Updates 'hostStatus' schema and 'readStatus' to report runtime status ('installed', 'version', 'path', and installation state).\\n- In 'readStatus', detects if the runtime is missing or differs from the current plugin version; triggers background installation once per process (marking status as 'installing').\\n- Adds 'installRuntime' handler to 'hostContract' for manual triggering.\\n- Modifies 'runBridge' to search '~/.muse-bridge/bin/musebridge' before falling back to system PATH.\\n\\n3. Hub / Server Integration ('server.ts'):\\n- Extends 'rpcContract' with 'installRuntime {hostId}' and delegates calls to the target host client.\\n- Updates provider ACP launch options in 'deriveProviderOptions': when the 'Agent command' setting is unset or empty, it executes '/bin/sh -c \\\\'exec \\\"$HOME/.muse-bridge/bin/muse-acp\\\" \\\"$@\\\"\\\\' \\\"muse-acp\\\"'. If 'Agent command' is explicitly specified by the user, its value overrides the launch command.\\n\\n4. Boundaries & Out-of-Scope:\\n- Account synchronization across hosts (handled in 'muse-hub-sync'), settings UI layout adjustments (handled in 'muse-settings-v2'), and Windows OS support are strictly out of scope.\\n\\n5. Verification & Acceptance:\\n- Verification requires running 'node /tmp/muse-runtime/check.mjs \\\"$PWD\\\"', verifying that installing with source 'dir:<checkout>' creates executable shims, reports 'No accounts' from 'musebridge', and sets runtime status to version 9.9.9.\\n- Unit tests in 'tests/runtime-install.test.mjs' must verify: same-version reinstall is a no-op, failed npm install cleans up build directories and returns '{ok: false}', only the last 2 versions are retained, and dev overrides correctly repoint shims.\\n- TypeScript typecheck ('npm run typecheck') must pass cleanly.\",\"keyFacts\":[\"BB host daemons only receive the bundled 'host.mjs' file ('~/.bb-machines/<hub>/plugin-host-artifacts/muse/<hash>/host.mjs'); 'bin/', 'bridge/', and 'node_modules' are not shipped to hosts. (.agents/plans/muse-packaging.md)\",\"Currently, 'muse-acp' is launched by name from the host daemon's PATH, but PATH varies across machines (e.g. '~/.local/bin' is missing on the OVH host daemon PATH). (.agents/plans/muse-packaging.md)\",\"The runtime installation module must be created at 'bridge/runtime-install.mjs' as plain ESM without external dependencies so it bundles into 'host.mjs'. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"'bridge/runtime-install.mjs' must export 'runtimeStatus({home})' and 'installRuntime({version, home, source, run})'. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"The runtime file structure requires '~/.muse-bridge/runtime/<version>/', '~/.muse-bridge/runtime/current' pointing to active version, and shims at '~/.muse-bridge/bin/musebridge' and '~/.muse-bridge/bin/muse-acp'. (.agents/plans/muse-packaging.md)\",\"Shims are POSIX shell scripts that locate Node and run 'exec node <runtime>/bin/<tool>.mjs \\\"$@\\\"'. (.agents/plans/muse-packaging.md, bin/musebridge)\",\"Default source downloads from 'https://codeload.github.com/VKirill/muse-ai-connector/tar.gz/refs/tags/v<version>' (fetch + tar -xzf); 'dir:<path>' copies from a local checkout. (.agents/plans/muse-packaging.md)\",\"Installation must be atomic: build in '<version>.tmp-<pid>', run 'npm install --omit=dev', and rename on success. (.agents/plans/muse-packaging.md)\",\"Failed installation must return '{ok: false}', clean up temporary build directories, and leave any previously working runtime intact. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"Only the last 2 versions of the runtime are kept; older versions must be deleted. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"If '~/.muse-bridge/bin/.dev' exists or 'MUSE_RUNTIME_DEV=<checkout>' is set, shims point to that checkout and auto-install preserves them. (.agents/plans/muse-packaging.md)\",\"'host.ts' must report 'runtime: {installed, version, path}' and automatically trigger background installation when runtime is missing or version mismatches (once per process). (.agents/plans/muse-packaging.md)\",\"'host.ts' must add an 'installRuntime' handler to 'hostContract'. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"'runBridge' in 'host.ts' must look for '~/.muse-bridge/bin/musebridge' before falling back to system PATH. (.agents/plans/muse-packaging.md)\",\"'server.ts' must add 'installRuntime {hostId}' to 'rpcContract' and forward the call to the target host. (TASK CONTRACT, server.ts)\",\"'server.ts' must launch '/bin/sh -c \\\\'exec \\\"$HOME/.muse-bridge/bin/muse-acp\\\" \\\"$@\\\"\\\\' \\\"muse-acp\\\"' when 'Agent command' setting is empty, but preserve the setting value when set. (TASK CONTRACT, .agents/plans/muse-packaging.md, server.ts)\",\"Windows OS support is explicitly out of scope and reported as unsupported in status. (TASK CONTRACT, .agents/plans/muse-packaging.md)\",\"Cross-host account sync ('muse-hub-sync') and settings screen UI work ('muse-settings-v2') are explicitly out of scope. (TASK CONTRACT)\",\"Acceptance test 'node /tmp/muse-runtime/check.mjs <checkout>' must verify installation from 'dir:<checkout>' into temp HOME, executable shims, 'No accounts' output, and runtime version 9.9.9. (TASK CONTRACT)\",\"'tests/runtime-install.test.mjs' must test: reinstalling the same version is a no-op, failed npm install leaves no build directory, only 2 versions are retained, and dev overrides work. (TASK CONTRACT)\",\"The task owns 'bridge/runtime-install.mjs', 'host.ts', 'server.ts', and 'tests/runtime-install.test.mjs'. (TASK CONTRACT)\",\"Paths '.bb/', 'bench/', and 'tests/accounts.test.mjs' are designated as 'never_touch'. (TASK CONTRACT)\",\"'package.json' defines current version '0.1.1' with scripts 'test' ('node --test tests/*.test.mjs') and 'typecheck' ('tsc --noEmit'). (package.json)\"],\"openQuestions\":[\"In 'server.ts', 'SETTINGS.agentCommand.default' is currently 'MUSE_AGENT_COMMAND' ('muse-acp'); how should an empty setting be differentiated from the default value when determining whether to use the '/bin/sh' fallback command?\",\"What exact Zod schema should be used for 'runtime' in 'hostStatus' and for 'installRuntime' inputs and outputs across 'host.ts' and 'server.ts'?\",\"How should the once-per-process auto-install state in 'host.ts' handle concurrent 'status' requests while a background installation is in progress or after a background install fails?\",\"How should tar archives be unpacked in 'bridge/runtime-install.mjs' on systems where external extraction tools might vary (e.g. execFile 'tar -xzf' vs Node stream APIs)?\",\"How should 'npm install' find the 'npm' binary when running in minimal daemon environments where PATH may not include standard Node/npm install directories?\",\"Does '/tmp/muse-runtime/check.mjs' pre-exist in the environment or need to be set up/mocked before running the verification command?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 12599,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_c46a8aaf9fba8c83",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}
