@@ -5,7 +5,7 @@ import path from "node:path";
 import readline from "node:readline";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { parseToolCall, resolveSessionPath, runTool } from "../bridge/acp-tools.mjs";
+import { buildIntro, parseToolCall, resolveSessionPath, runTool } from "../bridge/acp-tools.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const agentPath = path.join(here, "..", "bin", "muse-acp.mjs");
@@ -109,6 +109,14 @@ test("parseToolCall: no block, one block, last block wins", () => {
   assert.equal(two.kind, "call");
   assert.equal(two.name, "bash");
   assert.equal(two.thought.includes("read_file"), true);
+});
+
+test("buildIntro: the workspace is on the user's machine, reached only via muse-tool", () => {
+  const intro = buildIntro("/w/proj", []);
+  assert.match(intro, /not on your own (computer|machine)/i);
+  assert.match(intro, /never use your own (shell|tools)/i);
+  assert.match(intro, /first step.{0,80}list_dir/i);
+  assert.ok(intro.length <= 8000);
 });
 
 test("parseToolCall: bad JSON is an error, not a crash", () => {
