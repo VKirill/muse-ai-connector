@@ -361,13 +361,12 @@ async function runImageTurn(session, driver, text) {
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: result.text } });
   }
   for (const file of saved) {
-    const bytes = file.bytes ?? fs.readFileSync(file.path);
+    const rel = path.relative(session.cwd || process.cwd(), file.path) || file.path;
+    const alt = String(file.label || path.basename(rel)).replace(/]/g, "");
     update(session.id, {
       sessionUpdate: "agent_message_chunk",
-      content: { type: "image", mimeType: file.mime, data: Buffer.from(bytes).toString("base64") },
+      content: { type: "text", text: `\n![${alt}](${rel})` },
     });
-    const rel = path.relative(session.cwd || process.cwd(), file.path) || file.path;
-    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `\n${rel}` } });
   }
   if (!saved.length && !result.text) {
     update(session.id, {
