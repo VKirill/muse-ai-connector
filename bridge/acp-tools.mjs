@@ -14,7 +14,9 @@ const BASH_DEFAULT_TIMEOUT_SEC = 120;
 const BASH_MAX_TIMEOUT_SEC = 600;
 const SKIP_DIRS = new Set([".git", "node_modules"]);
 
+const TOOL_OPEN_RE = /```muse-tool[ \t]*\r?\n?/g;
 const TOOL_BLOCK_RE = /```muse-tool[ \t]*\r?\n?([\s\S]*?)```/g;
+const TRAILING_FENCE_RE = /^\s*```[ \t]*\r?\n?/;
 const INTRO_BUDGET = 7000;
 
 const LOCAL_TOOL_SCHEMAS = {
@@ -87,29 +89,109 @@ function cap(text, limit = OUTPUT_CAP) {
   return s.length > limit ? `${s.slice(0, limit)}\n…[truncated ${s.length - limit} chars]` : s;
 }
 
+function lastMatch(re, text) {
+  re.lastIndex = 0;
+  let match;
+  let last = null;
+  while ((match = re.exec(text)) !== null) last = match;
+  return last;
+}
+
+function finishToolPayload(parsed, thought) {
+  const name = typeof parsed?.tool === "string" ? parsed.tool : "";
+  const args = parsed && typeof parsed.args === "object" && parsed.args !== null ? parsed.args : {};
+  if (!name) return { kind: "error", name: "muse-tool", error: "muse-tool block has no tool name", args, thought };
+  return { kind: "call", name, args, thought };
+}
+
+function scanJsonValue(s) {
+  let i = 0;
+  while (i < s.length && (s[i] === " " || s[i] === "\t" || s[i] === "\n" || s[i] === "\r")) i++;
+  if (i >= s.length || (s[i] !== "{" && s[i] !== "[")) {
+    return { json: s.trim(), rest: "", inString: false, closers: "" };
+  }
+  const start = i;
+  const stack = [];
+  let inString = false;
+  let escape = false;
+  for (; i < s.length; i++) {
+    const c = s[i];
+    if (inString) {
+      if (escape) {
+        escape = false;
+        continue;
+      }
+      if (c === "\\") {
+        escape = true;
+        continue;
+      }
+      if (c === '"') inString = false;
+      continue;
+    }
+    if (c === '"') {
+      inString = true;
+      continue;
+    }
+    if (c === "{") {
+      stack.push("}");
+      continue;
+    }
+    if (c === "[") {
+      stack.push("]");
+      continue;
+    }
+    if (c === "}" || c === "]") {
+      if (stack[stack.length - 1] === c) stack.pop();
+      if (stack.length === 0) {
+        return { json: s.slice(start, i + 1), rest: s.slice(i + 1), inString: false, closers: "" };
+      }
+    }
+  }
+  if (inString) return { json: "", rest: "", inString: true, closers: "" };
+  return { json: s.slice(start), rest: "", inString: false, closers: stack.reverse().join("") };
+}
+
+function parseFromOpener(text) {
+  const last = lastMatch(TOOL_OPEN_RE, text);
+  if (!last) return { kind: "none", text };
+  const before = text.slice(0, last.index);
+  const scanned = scanJsonValue(text.slice(last.index + last[0].length));
+  if (scanned.inString) {
+    return {
+      kind: "error",
+      name: "muse-tool",
+      error: "muse-tool block was cut off inside a string",
+      args: {},
+      thought: before.trim(),
+    };
+  }
+  const thought = (before + scanned.rest.replace(TRAILING_FENCE_RE, "")).trim();
+  try {
+    return finishToolPayload(JSON.parse(scanned.json + scanned.closers), thought);
+  } catch (err) {
+    return { kind: "error", name: "muse-tool", error: `invalid muse-tool JSON: ${err.message}`, args: {}, thought };
+  }
+}
+
 /**
  * Finds the LAST ```muse-tool fenced block in a Muse reply.
+ * A closed fence wins when its JSON parses; otherwise the last opener is scanned
+ * so a missing fence or final brace still yields a tool call.
  * Returns {kind:"none", text} | {kind:"call", name, args, thought} | {kind:"error", name, error, thought}.
  * `thought` is the reply text outside that block (streams to BB as agent_thought_chunk).
  */
 export function parseToolCall(reply) {
   const text = String(reply ?? "");
-  TOOL_BLOCK_RE.lastIndex = 0;
-  let match;
-  let last = null;
-  while ((match = TOOL_BLOCK_RE.exec(text)) !== null) last = match;
-  if (!last) return { kind: "none", text };
-  const thought = (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim();
-  let parsed;
-  try {
-    parsed = JSON.parse(last[1].trim());
-  } catch (err) {
-    return { kind: "error", name: "muse-tool", error: `invalid muse-tool JSON: ${err.message}`, args: {}, thought };
+  const last = lastMatch(TOOL_BLOCK_RE, text);
+  if (last) {
+    const thought = (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim();
+    try {
+      return finishToolPayload(JSON.parse(last[1].trim()), thought);
+    } catch {
+      // ``` inside a JSON string makes the fence regex close too early.
+    }
   }
-  const name = typeof parsed?.tool === "string" ? parsed.tool : "";
-  const args = parsed && typeof parsed.args === "object" && parsed.args !== null ? parsed.args : {};
-  if (!name) return { kind: "error", name: "muse-tool", error: "muse-tool block has no tool name", args, thought };
-  return { kind: "call", name, args, thought };
+  return parseFromOpener(text);
 }
 
 const DONE_TAIL_RE = /([ \t]*\*{0,2}\[\[done\]\]\*{0,2})+[ \t]*$/i;
