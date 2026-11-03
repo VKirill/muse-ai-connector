@@ -8,6 +8,7 @@ import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { extractBbContext, promptText } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
 import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
+import { readJson, updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 import { createMuseClient, resolveTransport } from "../bridge/protocol/api.mjs";
 
@@ -59,19 +60,16 @@ function sessionsPath() {
   return path.join(bridgeHome(), "sessions.json");
 }
 
-function loadStore() {
-  try {
-    return JSON.parse(fs.readFileSync(sessionsPath(), "utf8"));
-  } catch {
-    return {};
-  }
+export function loadStore() {
+  return readJson(sessionsPath(), {});
 }
 
-function saveSession(session) {
-  fs.mkdirSync(bridgeHome(), { recursive: true });
-  const store = loadStore();
-  store[session.id] = { accountId: session.accountId, museChatId: session.museChatId, cwd: session.cwd };
-  fs.writeFileSync(sessionsPath(), `${JSON.stringify(store, null, 2)}\n`);
+export function saveSession(session) {
+  updateJson(sessionsPath(), {}, (store) => {
+    const next = store && typeof store === "object" ? store : {};
+    next[session.id] = { accountId: session.accountId, museChatId: session.museChatId, cwd: session.cwd };
+    return next;
+  });
 }
 
 function send(message) {
