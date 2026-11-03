@@ -24,7 +24,7 @@ relay on the Mac only turns chat replies into queue results.
 - `server/muse-task-shell` — forced command of Muse's SSH key
 - `server/muse-docker-exec` — the only sudo entry: `docker exec` into the
   current task container, `/app`
-- `muse_agent.py` — Pier/Harbor agent (`MuseAgent`) that queues tasks
+- `muse_agent.py` — Pier agent (`MuseAgent`, `pier.agents.base.BaseAgent`) that queues tasks
 - `relay.mjs` — Mac-side loop over `ssh ovh-main` + `musebridge send --json`
 - `run-pilot.sh` — `pier run` wrapper (runs on ovh-main)
 - `report.mjs` — `reward.json` files → `report.md` with pass@1

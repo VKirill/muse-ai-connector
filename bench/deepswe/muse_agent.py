@@ -14,9 +14,10 @@ import re
 import time
 from pathlib import Path
 
-from harbor.agents.base import BaseAgent
-from harbor.environments.base import BaseEnvironment
-from harbor.models.agent.context import AgentContext
+from pier.agents.base import BaseAgent
+from pier.environments.base import BaseEnvironment
+from pier.models.agent.context import AgentContext
+from pier.models.agent.network import NetworkAllowlist
 
 BENCH_DIR = Path(os.environ.get("MUSE_BENCH_DIR", "/srv/muse-bench"))
 POLL_SEC = float(os.environ.get("MUSE_BENCH_POLL_SEC", "15"))
@@ -30,6 +31,14 @@ class MuseAgent(BaseAgent):
 
     def version(self) -> str:
         return "0.1.0"
+
+    def install_spec(self) -> None:
+        # Muse is driven through its chat, nothing to install in the image.
+        return None
+
+    def network_allowlist(self) -> NetworkAllowlist:
+        # The task container stays offline; Muse reaches it over SSH.
+        return NetworkAllowlist()
 
     async def setup(self, environment: BaseEnvironment) -> None:
         pass
@@ -47,7 +56,7 @@ class MuseAgent(BaseAgent):
                 f"cannot read task container id: {result.stderr or result.stdout}"
             )
 
-        raw_session = self.session_id or f"muse-{int(time.time())}"
+        raw_session = getattr(environment, "session_id", None) or f"muse-{int(time.time())}"
         session = re.sub(r"[^A-Za-z0-9_.-]+", "-", raw_session)
         queue = BENCH_DIR / "queue"
         queue.mkdir(parents=True, exist_ok=True)
