@@ -1,49 +1,26 @@
 ---
-title: Muse workspace — a sandboxed machine account Muse works in over Tailscale SSH
-status: planned (owner: «давай делать потом», 2026-11-02)
+title: Muse workspace — how Muse works on the user's files
+status: decided (owner, 2026-11-03): the muse-tool bridge stays the only route
 ---
 
 # Muse workspace
 
-## Why
-Each Muse account has its own cloud VM, and both are in the owner's tailnet (checked 2026-11-03 with `tailscale ip` inside each
-Muse and `tailscale status` on the Mac mini): account `main` (VM d517dcc4…) is node `muse-1`, 100.107.209.36; account
-`kennethc990-mail-com` (VM 3037844b…) is node `muse`, 100.100.68.99. Muse's tailscale is a TCP proxy outside its container
-(no inbound, first connection to each address needs an approval card). Muse can SSH into machines of the owner's tailnet.
-Instead of reading only chat text, a BB task can tell Muse to work in files: clone a repo, analyse code,
-write a plan, implement a formed task, and leave results in a folder the connector collects.
+## Decision (2026-11-03)
+Muse reaches the user's files only through the muse-tool bridge of `muse-acp`: the connector runs her tool calls on the machine of the
+BB chat and returns the results. No SSH into the user's machines, no extra OS accounts, no Remote Login on the Mac.
 
-## Shape
-- A dedicated non-admin account, never the owner's: either macOS user `muse` on the Mac mini
-  (home `/Users/muse`, work dir `/Users/muse/work`) or — preferred — a container/user on `ovh-main`.
-- SSH: only Muse's key, in that account's `authorized_keys` with
-  `from="100.107.209.36,100.100.68.99",restrict` (one line per Muse account key) (no port/agent/X11 forwarding, no pty unless needed).
-  Remote Login limited to that account (`dseditgroup com.apple.access_ssh` on macOS).
-- No access to the owner's home, Chrome profiles, `~/.muse-bridge`, Env Catalog, `bb`, the owner's SSH keys or GitHub token.
-- GitHub: public repos clone over https with no key. Private repos: a read-only **deploy key per repo**
-  (or a fine-grained token limited to named repos, contents:read) stored only in that account.
-  Muse never pushes; changes come back as a patch/branch in `work/<task-id>/out/` and land through a BB writer task.
-- Tools in the account: git, node, python, the project's toolchain; disk quota on the work dir.
+## Why (measured 2026-11-03)
+- Muse's cloud VM cannot run git against GitHub (the egress proxy refuses it); a GitHub token gives her nothing for code work.
+- SSH from her VM to the tailnet works only through her own ProxyCommand (`sandbox-proxy.sh <magicdns-name> <port>`, raw IPs refused).
+  A replay of task `muse-account-slots` over SSH took 5.4 min against 4.3 min through the bridge: every command pays the SSH round trip.
+- Her SSH key would give a Meta-hosted machine full access to the owner's account (browser profiles, keys, BB access). Not worth it.
+- Through the bridge Muse solved 7 of 7 past coding tasks at first try (blind judge: better than SWE-2/Grok in 5 of 6).
 
-## Connector side (future task)
-- Provider/CLI option `--workspace`: the prompt gets a preamble
-  «Work over SSH in `muse@<host>:/…/work/<task-id>/`; put results in `out/`; reply DONE <summary>».
-- After the reply the bridge copies `work/<task-id>/out/` back (rsync over the owner's side, read-only) and
-  attaches the file list to the BB answer.
-- Task kinds: code analysis report, plan, implementation patch, research notes.
+## Bridge (0.3.11)
+- Up to 8 muse-tool blocks per reply, run in order; one combined `TOOL RESULT n/total` message back.
+- Tools: read_file, write_file, edit_file, apply_patch, list_dir, glob, grep, bash, tool_schema, list_skills, read_skill, MCP tools.
+- Output caps: 8 KB per call (head + tail), 24 KB per message.
 
-## Steps that need the owner's word (ask once for the whole plan)
-Creating the OS account / container, enabling Remote Login for it, adding Muse's key, creating deploy keys.
-
-## Muse as a coding writer (owner question 2026-11-03)
-Goal: Muse takes a formed task (like a Lane Pilot writer), works autonomously on code, result lands through the usual checks.
-
-- **Route B (preferred): git drop box over Tailscale.** The sandbox account holds only bare repos (`/…/muse/repos/<project>.git`).
-  Per task the connector pushes the base commit there as `base/<task>`; Muse (in its own VM, with its own tools) clones from the
-  drop box, works, commits, pushes `muse/<task>`. `muse-acp` then fetches `muse/<task>` from the drop box into the BB/Lane Pilot
-  worktree (the session `cwd`) and fast-forwards it; Lane Pilot's verification, critique and merge run unchanged. Muse never sees our worktrees.
-  SSH for Muse limited to `git-shell` in that account (`command="git-shell -c \"$SSH_ORIGINAL_COMMAND\"",from="100.107.209.36,100.100.68.99",restrict`).
-- **Route A (no Tailscale): tool loop over chat.** `muse-acp` asks Muse to answer with structured tool calls (read/write/run),
-  executes them through the ACP client's fs/terminal methods inside the worktree under BB's permission mode, and sends results back.
-  Safe but ~10 s per step; use only if Route B is refused.
-- Trial: low-risk tasks first; `lane_pilot_memory routing_stats` decides if Muse earns medium-risk tasks. Writer chain/provider choice is the owner's Lane Pilot setting.
+## Open
+- Measure the 0.3.11 bridge on the same replay tasks (time per task, rounds per task).
+- `musebridge send` drops a direct message of about 11 KB silently (4 KB passes); find the limit and fail loudly.
