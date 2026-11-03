@@ -1,9 +1,21 @@
 import { randomUUID } from "node:crypto";
+import zlib from "node:zlib";
 import WebSocket from "ws";
 import { cookieHeader } from "../cookies.mjs";
 import { decodeFrame, encodeRequest } from "./envelope.mjs";
 import { createHandshake } from "./noise.mjs";
 import { createStreamDecoder, decodeBody } from "./ndjson.mjs";
+
+const ZSTD_MAGIC = 0xfd2fb528;
+
+function decodeBytes(chunks, contentEncoding) {
+  const raw = Buffer.concat((chunks ?? []).map((chunk) => Buffer.from(chunk)));
+  const encoding = String(contentEncoding ?? "").toLowerCase();
+  if (encoding.includes("zstd") || (raw.length >= 4 && raw.readUInt32LE(0) === ZSTD_MAGIC)) {
+    return zlib.zstdDecompressSync(raw);
+  }
+  return raw;
+}
 
 const MUSE_ORIGIN = "https://muse.ai";
 export const DEFAULT_WS = "wss://hatch.metaaivm.com/v1/noise";
@@ -506,6 +518,9 @@ function openTunnel(ws, sendCipher, recvCipher) {
         headers: result.headers,
         json() {
           return decodeBody(result.chunks, headerValue(result.headers, "content-encoding"));
+        },
+        bytes() {
+          return decodeBytes(result.chunks, headerValue(result.headers, "content-encoding"));
         },
       };
     },

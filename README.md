@@ -129,8 +129,12 @@ the reply continues until Muse ends its final answer with a `[[done]]` line.
   itself and keeps waiting. Cards about money (purchase, payment, subscription) are never
   touched — the reply notes «Muse asks for approval» and waits for you in Muse;
   `musebridge approve --chat <id>` answers pending cards in an existing chat.
-- **Model:** `muse-spark` (Muse Spark). Muse has no reasoning knob: BB reasoning levels are
-  accepted so the composer does not fail, and the agent ignores them.
+- **Models:** `muse-spark` (Muse Spark, default) keeps the tool loop. **Muse Image** (`muse-image`)
+  turns every user message into a picture request: a leading form factor (`16:9 кот` or `[4:5] cat`)
+  becomes `Create image format: <W:H>. …`; otherwise `Create image. …`. No tools intro. The agent
+  saves new pictures under `<workspace>/muse-images/` and sends each one back as an image content
+  block plus the relative path. Follow-ups stay in the same Muse chat. Muse has no reasoning knob:
+  BB reasoning levels are accepted so the composer does not fail, and the agent ignores them.
 
 ## CLI reference
 
@@ -142,6 +146,8 @@ musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
                                             # show a chat transcript
 musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                                             # send a message and print the reply
+musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
+                                            # generate a picture (default ./muse-images)
 musebridge approve [--account <id>] --chat <id>
                                             # answer pending approval cards (Always allow;
                                             # cards about money are left to you)
@@ -200,7 +206,8 @@ account all finished.
   for chat runs, add-account always opens a visible window.
 - The runtime self-install needs Node 22+ and npm reachable from the BB host daemon; Windows is
   not supported.
-- Image and audio prompts are not supported (`promptCapabilities`: text only).
+- User-attached image and audio prompts are not supported (`promptCapabilities`: text only).
+  Generated pictures come back from the **Muse Image** model and `musebridge image`.
 
 ## Troubleshooting
 
@@ -363,7 +370,12 @@ musebridge accounts set <id> --max-parallel <n>
   «Всегда разрешать» и ждёт дальше. Карточки про деньги (покупка, оплата, подписка) не трогаются —
   ответ помечается «Muse asks for approval» и ждёт вашего решения в Muse;
   `musebridge approve --chat <id>` отвечает на ожидающие карточки в существующем чате.
-- **Модель:** `muse-spark` (Muse Spark). У Muse нет переключателя рассуждения: уровни BB
+- **Модели:** `muse-spark` (Muse Spark, по умолчанию) — цикл инструментов. **Muse Image**
+  (`muse-image`) каждое сообщение пользователя превращает в запрос картинки: ведущий форм-фактор
+  (`16:9 кот` или `[4:5] cat`) становится `Create image format: <W:H>. …`, иначе
+  `Create image. …`. Без интро инструментов. Агент сохраняет новые картинки в
+  `<workspace>/muse-images/` и отдаёт каждую блоком изображения плюс относительный путь.
+  Продолжения идут в тот же чат Muse. У Muse нет переключателя рассуждения: уровни BB
   принимаются, чтобы композитор не падал, и агент их игнорирует.
 
 ### Справка по CLI
@@ -376,6 +388,8 @@ musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
                                             # транскрипт чата
 musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                                             # отправить сообщение и напечатать ответ
+musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
+                                            # сгенерировать картинку (по умолчанию ./muse-images)
 musebridge approve [--account <id>] --chat <id>
                                             # ответить на карточки одобрения («Всегда разрешать»;
                                             # карточки про деньги остаются вам)
@@ -434,7 +448,8 @@ muse-acp                                    # ACP-агент на stdio (зап�
   добавление аккаунта всегда открывает видимое окно.
 - Самоустановке рантайма нужны Node 22+ и npm, доступные хост-демону BB; Windows не
   поддерживается.
-- Картинки и аудио в промптах не поддерживаются (`promptCapabilities`: только текст).
+- Картинки и аудио, приложенные к промпту, не поддерживаются (`promptCapabilities`: только
+  текст). Сгенерированные картинки приходят из модели **Muse Image** и команды `musebridge image`.
 
 ### Диагностика
 

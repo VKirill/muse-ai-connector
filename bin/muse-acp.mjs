@@ -10,6 +10,7 @@ import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "..
 import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { readJson, updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
+import { extractImages, imagePrompt, parseLeadingFormat, saveImages } from "../bridge/images.mjs";
 import { createMuseClient, resolveTransport } from "../bridge/protocol/api.mjs";
 
 const FAKE = process.env.MUSE_BRIDGE_FAKE === "1";
@@ -26,12 +27,16 @@ const NUDGE_MESSAGE =
 const CLIENT_REQUEST_TIMEOUT_MS = 60_000;
 const DUMP_PROMPT_FILE = process.env.MUSE_ACP_DUMP_PROMPT || "";
 const MUSE_MODEL_ID = "muse-spark";
-const MUSE_MODEL_NAME = "Muse Spark";
+const MUSE_IMAGE_MODEL_ID = "muse-image";
+const AVAILABLE_MODELS = [
+  { modelId: MUSE_MODEL_ID, name: "Muse Spark" },
+  { modelId: MUSE_IMAGE_MODEL_ID, name: "Muse Image" },
+];
 
 let clientCapabilities = {};
 let toolCallSeq = 0;
 
-/** @type {Map<string, { id: string, accountId: string | null, museChatId: string | null, cwd: string, cancelled: boolean, pendingReply: { chatId: string, deliveredPrefix: string } | null }>} */
+/** @type {Map<string, { id: string, accountId: string | null, museChatId: string | null, cwd: string, modelId: string, cancelled: boolean, pendingReply: { chatId: string, deliveredPrefix: string } | null }>} */
 const sessions = new Map();
 
 /** @type {Map<string|number, { resolve: (v: unknown) => void, reject: (e: Error) => void }>} */
@@ -70,7 +75,12 @@ export function loadStore() {
 export function saveSession(session) {
   updateJson(sessionsPath(), {}, (store) => {
     const next = store && typeof store === "object" ? store : {};
-    next[session.id] = { accountId: session.accountId, museChatId: session.museChatId, cwd: session.cwd };
+    next[session.id] = {
+      accountId: session.accountId,
+      museChatId: session.museChatId,
+      cwd: session.cwd,
+      modelId: session.modelId ?? MUSE_MODEL_ID,
+    };
     return next;
   });
 }
@@ -190,7 +200,40 @@ async function openFakeSession() {
       }
       messages.push(reply);
       onDelta?.(replyText);
-      return { chatId: id, messageId: reply.id, text: replyText };
+      const mediaPath = "workspace/imagine_media/fake.webp";
+      const history = {
+        result: {
+          chat_events: [
+            { event_name: "message.user", seq: 1, display_text: text, payload: { content: text } },
+            { event_name: "message.assistant", seq: 2, display_text: replyText, payload: { content: replyText } },
+            {
+              event_name: "delta.presentation",
+              seq: 3,
+              display_text: "Fake image",
+              payload: {
+                kind: "image",
+                image_path: mediaPath,
+                data: {
+                  images: [
+                    {
+                      path: `sandbox://${mediaPath}`,
+                      mime: "image/webp",
+                      width: 64,
+                      height: 36,
+                      label: "Fake image",
+                      byte_len: 8,
+                    },
+                  ],
+                },
+              },
+            },
+          ],
+        },
+      };
+      return { chatId: id, messageId: reply.id, text: replyText, chatEventSeq: 0, history };
+    },
+    async fetchMedia() {
+      return Buffer.from("WEBPFAKE");
     },
     close: async () => {},
   };
@@ -233,15 +276,24 @@ function getSession(sessionId) {
   if (session) return session;
   const saved = loadStore()[sessionId];
   if (!saved) throw codedError(-32602, `unknown session: ${sessionId}`);
-  const restored = { id: sessionId, accountId: saved.accountId ?? null, museChatId: saved.museChatId ?? null, cwd: saved.cwd ?? process.cwd(), cancelled: false, pendingReply: null, mcp: [] };
+  const restored = {
+    id: sessionId,
+    accountId: saved.accountId ?? null,
+    museChatId: saved.museChatId ?? null,
+    cwd: saved.cwd ?? process.cwd(),
+    modelId: saved.modelId ?? MUSE_MODEL_ID,
+    cancelled: false,
+    pendingReply: null,
+    mcp: [],
+  };
   sessions.set(sessionId, restored);
   return restored;
 }
 
-function modelsBlock() {
+function modelsBlock(session) {
   return {
-    currentModelId: MUSE_MODEL_ID,
-    availableModels: [{ modelId: MUSE_MODEL_ID, name: MUSE_MODEL_NAME }],
+    currentModelId: session?.modelId ?? MUSE_MODEL_ID,
+    availableModels: AVAILABLE_MODELS,
   };
 }
 
@@ -271,6 +323,59 @@ async function streamPendingReply(session, driver, pending) {
   } catch {
     // A failed history read must not block the new prompt.
   }
+}
+
+async function runImageTurn(session, driver, text) {
+  const parsed = parseLeadingFormat(text);
+  const toSend = imagePrompt(parsed.text, parsed.format || undefined);
+  dumpSent(toSend);
+  const result = await driver.send({
+    chatId: session.museChatId || undefined,
+    text: toSend,
+    timeoutMs: REPLY_TIMEOUT_MS,
+    isCancelled: () => session.cancelled,
+    onChatId: (id) => {
+      session.museChatId = id;
+      saveSession(session);
+    },
+  });
+  session.museChatId = result.chatId;
+  saveSession(session);
+  if (session.cancelled) return { stopReason: "cancelled" };
+  const hist =
+    result.history ?? (typeof driver.historyRaw === "function" ? await driver.historyRaw(result.chatId) : null);
+  const images = hist ? extractImages(hist, { sinceSeq: result.chatEventSeq ?? 0 }) : [];
+  const dir = path.join(session.cwd || process.cwd(), "muse-images");
+  let saved = [];
+  if (images.length) {
+    if (typeof driver.fetchMedia !== "function") {
+      update(session.id, {
+        sessionUpdate: "agent_message_chunk",
+        content: { type: "text", text: "Image mode needs the API transport." },
+      });
+      return { stopReason: "end_turn" };
+    }
+    saved = await saveImages(driver, images, dir);
+  }
+  if (result.text) {
+    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: result.text } });
+  }
+  for (const file of saved) {
+    const bytes = file.bytes ?? fs.readFileSync(file.path);
+    update(session.id, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "image", mimeType: file.mime, data: Buffer.from(bytes).toString("base64") },
+    });
+    const rel = path.relative(session.cwd || process.cwd(), file.path) || file.path;
+    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `\n${rel}` } });
+  }
+  if (!saved.length && !result.text) {
+    update(session.id, {
+      sessionUpdate: "agent_message_chunk",
+      content: { type: "text", text: "Muse answered without a picture" },
+    });
+  }
+  return { stopReason: "end_turn" };
 }
 
 async function runPrompt(session, params) {
@@ -314,6 +419,9 @@ async function runPrompt(session, params) {
           const pending = session.pendingReply;
           session.pendingReply = null;
           await streamPendingReply(session, driver, pending);
+        }
+        if (session.modelId === MUSE_IMAGE_MODEL_ID) {
+          return await runImageTurn(session, driver, text);
         }
         const fsCaps = clientCapabilities?.fs ?? {};
         const mcpIndex = buildMcpIndex(session.mcp);
@@ -446,15 +554,28 @@ async function handle(method, params) {
         authMethods: [],
       };
     case "session/new": {
-      const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cwd: typeof params?.cwd === "string" && params.cwd ? params.cwd : process.cwd(), cancelled: false, pendingReply: null, mcp: [] };
+      const session = {
+        id: `muse-${randomUUID()}`,
+        accountId: null,
+        museChatId: null,
+        cwd: typeof params?.cwd === "string" && params.cwd ? params.cwd : process.cwd(),
+        modelId: MUSE_MODEL_ID,
+        cancelled: false,
+        pendingReply: null,
+        mcp: [],
+      };
       sessions.set(session.id, session);
       saveSession(session);
       session.mcp = await startMcpServers(params?.mcpServers);
-      return { sessionId: session.id, models: modelsBlock() };
+      return { sessionId: session.id, models: modelsBlock(session) };
     }
     case "session/set_model": {
-      getSession(params.sessionId);
-      if (params.modelId !== MUSE_MODEL_ID) throw codedError(-32602, `unknown model: ${params.modelId}`);
+      const session = getSession(params.sessionId);
+      if (params.modelId !== MUSE_MODEL_ID && params.modelId !== MUSE_IMAGE_MODEL_ID) {
+        throw codedError(-32602, `unknown model: ${params.modelId}`);
+      }
+      session.modelId = params.modelId;
+      saveSession(session);
       return {};
     }
     case "session/prompt":
