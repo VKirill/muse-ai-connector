@@ -1,8 +1,14 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
 const SYSTEM_BLOCK_RE = /<(system_instructions|system-reminder)>[\s\S]*?<\/\1>/g;
 const INSTRUCTIONS_RE = /<system_instructions>([\s\S]*?)<\/system_instructions>/g;
 const REMINDER_RE = /<system-reminder>[\s\S]*?<\/system-reminder>/g;
 const CONTEXT_BUDGET = 16000;
 const TRUNCATED = "\n…(truncated)";
+const FILE_CHAR_CAP = 200000;
+const TOTAL_CHAR_CAP = 400000;
 
 const KEEP_MARKERS = [
   [/^Contents of .+\((?:project instructions|user's private global instructions)/, "project"],
@@ -21,15 +27,123 @@ function joinPrompt(prompt) {
     : String(prompt ?? "");
 }
 
+function filePathFromUri(uri) {
+  if (typeof uri !== "string" || !uri.startsWith("file:")) return null;
+  try {
+    return fileURLToPath(uri);
+  } catch {
+    return null;
+  }
+}
+
+function attachmentName(block, uri) {
+  if (typeof block?.name === "string" && block.name) return block.name;
+  const abs = filePathFromUri(uri);
+  if (abs) return path.basename(abs);
+  if (typeof uri === "string" && uri) {
+    try {
+      const base = path.basename(decodeURIComponent(new URL(uri).pathname));
+      if (base) return base;
+    } catch {
+      const base = path.basename(uri);
+      if (base) return base;
+    }
+  }
+  return "file";
+}
+
+function typeHint(block, name, abs) {
+  if (typeof block?.mimeType === "string" && block.mimeType) return block.mimeType;
+  const ext = path.extname(name || abs || "").replace(/^\./, "");
+  return ext || "binary";
+}
+
+function notSentLine(name, hint) {
+  return `\n\n[Attached file: ${name} (${hint}, not sent: Muse gets only text files for now)]`;
+}
+
+function tildeFence(content) {
+  let n = 3;
+  const runs = content.match(/~{3,}/g);
+  if (runs) {
+    for (const run of runs) n = Math.max(n, run.length + 1);
+  }
+  const fence = "~".repeat(n);
+  return `${fence}\n${content}\n${fence}`;
+}
+
+function utf8Text(buf) {
+  if (buf.includes(0)) return null;
+  const text = buf.toString("utf8");
+  if (!Buffer.from(text, "utf8").equals(buf)) return null;
+  return text;
+}
+
+function inlineTextFile(name, content, budget) {
+  const original = content.length;
+  const keep = Math.max(0, Math.min(FILE_CHAR_CAP, budget, original));
+  const body = content.slice(0, keep);
+  const trunc = keep < original ? `\n…(file truncated: ${keep} of ${original} characters)` : "";
+  return { text: `\n\n[Attached file: ${name}]\n${tildeFence(body)}${trunc}`, used: keep };
+}
+
+function inlineResourceLink(block, budget) {
+  const uri = block?.uri;
+  const name = attachmentName(block, uri);
+  const abs = filePathFromUri(uri);
+  if (!abs) return { text: notSentLine(name, typeHint(block, name, "")), used: 0 };
+  let buf;
+  try {
+    buf = fs.readFileSync(abs);
+  } catch {
+    return { text: notSentLine(name, typeHint(block, name, abs)), used: 0 };
+  }
+  const content = utf8Text(buf);
+  if (content === null) return { text: notSentLine(name, typeHint(block, name, abs)), used: 0 };
+  return inlineTextFile(name, content, budget);
+}
+
+function inlineEmbeddedResource(block, budget) {
+  const res = block?.resource && typeof block.resource === "object" ? block.resource : {};
+  const uri = typeof res.uri === "string" ? res.uri : typeof block?.uri === "string" ? block.uri : "";
+  const name = attachmentName(block, uri);
+  if (typeof res.text === "string") return inlineTextFile(name, res.text, budget);
+  if (typeof block?.text === "string") return inlineTextFile(name, block.text, budget);
+  const mime = typeof res.mimeType === "string" ? res.mimeType : typeHint(block, name, "");
+  return { text: notSentLine(name, mime), used: 0 };
+}
+
+function joinPromptWithAttachments(prompt) {
+  let used = 0;
+  const parts = [];
+  for (const block of prompt) {
+    if (block?.type === "resource_link") {
+      const piece = inlineResourceLink(block, TOTAL_CHAR_CAP - used);
+      parts.push(piece.text);
+      used += piece.used;
+      continue;
+    }
+    if (block?.type === "resource") {
+      const piece = inlineEmbeddedResource(block, TOTAL_CHAR_CAP - used);
+      parts.push(piece.text);
+      used += piece.used;
+      continue;
+    }
+    if (typeof block?.text === "string") parts.push(block.text);
+  }
+  return parts.join("");
+}
+
 /**
- * Joins the prompt's text blocks and removes BB's injected
+ * Joins the prompt's text blocks (and inlines attached text files) and removes BB's injected
  * <system_instructions>…</system_instructions> and <system-reminder>…</system-reminder>
  * sections (they may span several blocks after the join). Other markup is kept as is.
  * @param {unknown} prompt
  * @returns {string}
  */
 export function promptText(prompt) {
-  return joinPrompt(prompt).replace(SYSTEM_BLOCK_RE, "").trim();
+  const raw = Array.isArray(prompt) ? joinPromptWithAttachments(prompt) : String(prompt ?? "");
+  return raw.replace(SYSTEM_BLOCK_RE, "").trim();
 }
 
 /**
