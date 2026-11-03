@@ -113,6 +113,20 @@ function historyMessages(chatId, payload) {
   return { chatId, revision: null, hasMore: false, messages };
 }
 
+function maxEventSeq(payload) {
+  let max = 0;
+  for (const event of payload?.result?.chat_events ?? payload?.chat_events ?? []) {
+    const seq = Number(event?.seq ?? event?.chat_event_seq ?? event?.payload?.chat_event_seq ?? 0);
+    if (Number.isFinite(seq) && seq > max) max = seq;
+  }
+  return max;
+}
+
+function mediaRequestPath(mediaPath) {
+  const clean = String(mediaPath ?? "").replace(/^sandbox:\/\//, "").replace(/^\/+/, "");
+  return `/media/raw/${clean}`;
+}
+
 function mapSessions(payload) {
   const sessions = payload?.result?.sessions ?? payload?.sessions ?? [];
   return sessions
@@ -166,16 +180,38 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
     return mapSessions(await res.json());
   }
 
-  async function history(chatId) {
+  async function historyRaw(chatId) {
     const res = await gw.request({
       method: "GET",
       path: `/chat/history?limit=40&transcript_mode=messages&session_id=${encodeURIComponent(chatId)}`,
     });
-    return historyMessages(chatId, await res.json());
+    return res.json();
+  }
+
+  async function history(chatId) {
+    return historyMessages(chatId, await historyRaw(chatId));
+  }
+
+  async function fetchMedia(mediaPath) {
+    const res = await gw.request({ method: "GET", path: mediaRequestPath(mediaPath) });
+    if (res.status < 200 || res.status >= 300) {
+      const err = new Error(`Muse media fetch failed (${res.status})`);
+      err.status = res.status;
+      throw err;
+    }
+    return res.bytes();
   }
 
   async function send({ chatId, text, onDelta, onChatId, timeoutMs = 180_000, isCancelled } = {}) {
     const sessionId = chatId ?? randomUUID();
+    let startSeq = 0;
+    if (chatId) {
+      try {
+        startSeq = maxEventSeq(await historyRaw(chatId));
+      } catch {
+        startSeq = 0;
+      }
+    }
     onChatId?.(sessionId);
     const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
     const opened = await gw.request({
@@ -296,7 +332,8 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
       throw err;
     }
 
-    const parsed = await history(resolvedChatId);
+    const raw = await historyRaw(resolvedChatId);
+    const parsed = historyMessages(resolvedChatId, raw);
     let assistant = null;
     for (let i = parsed.messages.length - 1; i >= 0; i--) {
       if (parsed.messages[i].role === "assistant") {
@@ -304,14 +341,20 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
         break;
       }
     }
-    return { chatId: resolvedChatId, messageId: assistant?.id ?? openedJson.message_id ?? null, text: assistant?.content ?? "" };
+    return {
+      chatId: resolvedChatId,
+      messageId: assistant?.id ?? openedJson.message_id ?? null,
+      text: assistant?.content ?? "",
+      chatEventSeq: startSeq,
+      history: raw,
+    };
   }
 
   async function close() {
     await gw.close?.();
   }
 
-  return { isSignedIn, listChats, history, send, close };
+  return { isSignedIn, listChats, history, historyRaw, fetchMedia, send, close };
 }
 
 function shouldFallback(err) {

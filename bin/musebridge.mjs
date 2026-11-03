@@ -18,6 +18,7 @@ import {
 import { cookiesPath, loadCookies, saveCookies } from "../bridge/cookies.mjs";
 import { updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome, profileDir } from "../bridge/paths.mjs";
+import { extractImages, imagePrompt, saveImages } from "../bridge/images.mjs";
 import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { chromeExecutable, openSession } from "../bridge/session.mjs";
 import { addTarget, listTargets, removeTarget, syncAccount, syncAll, syncIfTargets } from "../bridge/sync.mjs";
@@ -32,6 +33,8 @@ Commands:
                             Show a chat transcript
   send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                             Send a message and print the reply
+  image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
+                            Generate a picture (default output ./muse-images)
   approve [--account <id>] --chat <id>
                             Answer pending approval cards (Always allow;
                             cards about money are left to you)
@@ -235,6 +238,107 @@ async function cmdHistory(args) {
       process.stdout.write(`${message.role}: ${message.content}\n`);
     }
   });
+}
+
+function openFakeImageTransport() {
+  const histPath = process.env.MUSE_BRIDGE_FAKE_HISTORY;
+  const mediaPath = process.env.MUSE_BRIDGE_FAKE_MEDIA;
+  const sentPath = process.env.MUSE_BRIDGE_FAKE_SENT;
+  const history = histPath ? JSON.parse(fs.readFileSync(histPath, "utf8")) : { result: { chat_events: [] } };
+  const bytes = mediaPath ? fs.readFileSync(mediaPath) : Buffer.from("WEBPFAKE");
+  return {
+    isSignedIn: async () => true,
+    async send({ text }) {
+      if (sentPath) fs.appendFileSync(sentPath, `${JSON.stringify({ text })}\n`);
+      return { chatId: "fake-image-chat", text: "Here it is.", chatEventSeq: 0, history };
+    },
+    async fetchMedia() {
+      return bytes;
+    },
+    close: async () => {},
+  };
+}
+
+async function cmdImage(args) {
+  const asJson = takeFlag(args, "--json");
+  const format = takeOption(args, "--format");
+  const outDir = takeOption(args, "--out") || path.resolve("muse-images");
+  const chatId = takeOption(args, "--chat");
+  const timeoutSec = takeOption(args, "--timeout");
+  const accountFlag = takeOption(args, "--account");
+  const transport = takeOption(args, "--transport");
+  const prompt = args.join(" ").trim();
+  if (!prompt) {
+    process.stderr.write(
+      "Usage: musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>\n",
+    );
+    process.exit(1);
+  }
+  let text;
+  try {
+    text = imagePrompt(prompt, format || undefined);
+  } catch (err) {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(1);
+  }
+  const timeoutMs = timeoutSec ? Math.max(1, Number(timeoutSec)) * 1000 : undefined;
+  if (timeoutSec && !Number.isFinite(timeoutMs)) {
+    process.stderr.write(`Bad --timeout value: ${timeoutSec}\n`);
+    process.exit(1);
+  }
+  const accountId = accountFlag || pickAccount().id;
+  const release = acquire(accountId, { owner: "musebridge-image" });
+  try {
+    touch(accountId);
+    const run = async (session) => {
+      await requireSignedIn(session, accountId);
+      if (typeof session.fetchMedia !== "function") {
+        process.stderr.write("Image download needs the API transport.\n");
+        process.exit(1);
+      }
+      const result = await session.send({
+        chatId: chatId || undefined,
+        text,
+        timeoutMs,
+      });
+      const hist = result.history ?? (typeof session.historyRaw === "function" ? await session.historyRaw(result.chatId) : null);
+      const images = hist ? extractImages(hist, { sinceSeq: result.chatEventSeq ?? 0 }) : [];
+      if (images.length === 0) {
+        process.stderr.write("Muse answered without a picture\n");
+        process.exit(1);
+      }
+      const saved = await saveImages(session, images, outDir);
+      if (asJson) {
+        process.stdout.write(
+          `${JSON.stringify({
+            chatId: result.chatId,
+            text: result.text,
+            images: saved.map((img) => ({
+              path: img.path,
+              width: img.width,
+              height: img.height,
+              mime: img.mime,
+              label: img.label,
+            })),
+          })}\n`,
+        );
+        return;
+      }
+      for (const img of saved) process.stdout.write(`${img.path}\n`);
+    };
+    if (process.env.MUSE_BRIDGE_FAKE === "1") {
+      const session = openFakeImageTransport();
+      try {
+        await run(session);
+      } finally {
+        await session.close();
+      }
+      return;
+    }
+    await withTransport({ accountId, transport, headless: true }, run);
+  } finally {
+    release();
+  }
 }
 
 async function cmdSend(args) {
@@ -613,6 +717,9 @@ async function main(argv) {
       break;
     case "send":
       await cmdSend(args);
+      break;
+    case "image":
+      await cmdImage(args);
       break;
     case "approve":
       await cmdApprove(args);
