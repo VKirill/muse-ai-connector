@@ -34,7 +34,9 @@ Commands:
   send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                             Send a message and print the reply
   image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
-                            Generate a picture (default output ./muse-images)
+                            Generate a picture (default output ./muse-images).
+                            First call returns chatId; pass --chat <id> to keep
+                            editing in the same chat (--format still prefixes).
   approve [--account <id>] --chat <id>
                             Answer pending approval cards (Always allow;
                             cards about money are left to you)
@@ -270,13 +272,14 @@ async function cmdImage(args) {
   const prompt = args.join(" ").trim();
   if (!prompt) {
     process.stderr.write(
-      "Usage: musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>\n",
+      "Usage: musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>\n" +
+        "  First call returns chatId; pass --chat <id> to keep editing in the same chat.\n",
     );
     process.exit(1);
   }
   let text;
   try {
-    text = imagePrompt(prompt, format || undefined);
+    text = chatId && !format ? prompt : imagePrompt(prompt, format || undefined);
   } catch (err) {
     process.stderr.write(`${err.message}\n`);
     process.exit(1);

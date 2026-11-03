@@ -130,11 +130,12 @@ the reply continues until Muse ends its final answer with a `[[done]]` line.
   touched — the reply notes «Muse asks for approval» and waits for you in Muse;
   `musebridge approve --chat <id>` answers pending cards in an existing chat.
 - **Models:** `muse-spark` (Muse Spark, default) keeps the tool loop. **Muse Image** (`muse-image`)
-  turns every user message into a picture request: a leading form factor (`16:9 кот` or `[4:5] cat`)
-  becomes `Create image format: <W:H>. …`; otherwise `Create image. …`. No tools intro. The agent
-  saves new pictures under `<workspace>/muse-images/` and sends each one back as an image content
-  block plus the relative path. Follow-ups stay in the same Muse chat. Muse has no reasoning knob:
-  BB reasoning levels are accepted so the composer does not fail, and the agent ignores them.
+  prefixes only the first message (or a later one that starts with a form factor `16:9 кот` /
+  `[4:5] cat`) as `Create image format: <W:H>. …` or `Create image. …`. Other follow-ups go to the
+  same Muse chat as typed. No tools intro. The agent saves new pictures under
+  `<workspace>/muse-images/` and sends each one back as an image content block plus the relative
+  path. Muse has no reasoning knob: BB reasoning levels are accepted so the composer does not fail,
+  and the agent ignores them.
 
 ## CLI reference
 
@@ -147,7 +148,7 @@ musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
 musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                                             # send a message and print the reply
 musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
-                                            # generate a picture (default ./muse-images)
+                                            # first call returns chatId; pass --chat <id> to keep editing in the same chat
 musebridge approve [--account <id>] --chat <id>
                                             # answer pending approval cards (Always allow;
                                             # cards about money are left to you)
@@ -371,12 +372,12 @@ musebridge accounts set <id> --max-parallel <n>
   ответ помечается «Muse asks for approval» и ждёт вашего решения в Muse;
   `musebridge approve --chat <id>` отвечает на ожидающие карточки в существующем чате.
 - **Модели:** `muse-spark` (Muse Spark, по умолчанию) — цикл инструментов. **Muse Image**
-  (`muse-image`) каждое сообщение пользователя превращает в запрос картинки: ведущий форм-фактор
-  (`16:9 кот` или `[4:5] cat`) становится `Create image format: <W:H>. …`, иначе
-  `Create image. …`. Без интро инструментов. Агент сохраняет новые картинки в
-  `<workspace>/muse-images/` и отдаёт каждую блоком изображения плюс относительный путь.
-  Продолжения идут в тот же чат Muse. У Muse нет переключателя рассуждения: уровни BB
-  принимаются, чтобы композитор не падал, и агент их игнорирует.
+  (`muse-image`) ставит префикс только на первое сообщение (или на следующее, которое начинается
+  с форм-фактора `16:9 кот` / `[4:5] cat`): `Create image format: <W:H>. …` или `Create image. …`.
+  Остальные реплики уходят в тот же чат Muse как есть. Без интро инструментов. Агент сохраняет
+  новые картинки в `<workspace>/muse-images/` и отдаёт каждую блоком изображения плюс относительный
+  путь. У Muse нет переключателя рассуждения: уровни BB принимаются, чтобы композитор не падал,
+  и агент их игнорирует.
 
 ### Справка по CLI
 
@@ -389,7 +390,7 @@ musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
 musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                                             # отправить сообщение и напечатать ответ
 musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
-                                            # сгенерировать картинку (по умолчанию ./muse-images)
+                                            # первый вызов возвращает chatId; --chat <id> продолжает правки в том же чате
 musebridge approve [--account <id>] --chat <id>
                                             # ответить на карточки одобрения («Всегда разрешать»;
                                             # карточки про деньги остаются вам)
