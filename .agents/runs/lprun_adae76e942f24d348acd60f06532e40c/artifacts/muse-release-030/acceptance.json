@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-release-030",
+  "task_sha256": "9e136a75f4584ecc056cfc8e7fcdcab7a4ed0041faf0877f0d985a780b8038bc",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "13f21d9614b07a82724248b1bbbfa77c0f9d5d168fe3d529e29e0c5d724b51e2",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T13:19:50.526Z",
+  "model": "swe-2-high"
+}
