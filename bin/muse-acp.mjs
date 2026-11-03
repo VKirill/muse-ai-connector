@@ -4,16 +4,18 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
+import { promptText } from "../bridge/acp-prompt.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 
 const FAKE = process.env.MUSE_BRIDGE_FAKE === "1";
+const FAKE_DELAY_MS = Math.max(0, Number(process.env.MUSE_BRIDGE_FAKE_DELAY_MS || 0));
 const LOCK_WAIT_MS = 5 * 60_000;
 const HEADLESS = process.env.MUSE_HEADLESS !== "0" && process.env.MUSE_HEADLESS !== "false";
 const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC || 180)) * 1000;
 const MUSE_MODEL_ID = "muse-spark";
 const MUSE_MODEL_NAME = "Muse Spark";
 
-/** @type {Map<string, { id: string, accountId: string | null, museChatId: string | null, cancelled: boolean }>} */
+/** @type {Map<string, { id: string, accountId: string | null, museChatId: string | null, cancelled: boolean, pendingReply: { chatId: string, deliveredPrefix: string } | null }>} */
 const sessions = new Map();
 
 function sessionsPath() {
@@ -53,13 +55,6 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function promptText(prompt) {
-  if (!Array.isArray(prompt)) return String(prompt ?? "");
-  return prompt
-    .map((block) => (typeof block?.text === "string" ? block.text : ""))
-    .join("");
-}
-
 function errorMessage(err) {
   const code = err?.code;
   if (code === "no_free_account") return "All Muse accounts are busy. Try again in a moment.";
@@ -74,14 +69,28 @@ function signedOutMessage(accountId) {
   return `Muse account ${label} is signed out: open BB Settings → Plugins → Muse and sign in again`;
 }
 
+const fakeChats = new Map();
+let fakeSeq = 0;
+
 async function openFakeSession() {
   return {
     isSignedIn: async () => true,
-    async send({ chatId, onDelta, isCancelled }) {
-      onDelta?.("PO");
+    async history(chatId) {
+      return { chatId, revision: null, hasMore: false, messages: fakeChats.get(chatId) ?? [] };
+    },
+    async send({ chatId, text, onDelta, onChatId, isCancelled }) {
+      const id = chatId ?? `fake-muse-chat-${++fakeSeq}`;
+      let messages = fakeChats.get(id);
+      if (!messages) fakeChats.set(id, (messages = []));
+      onChatId?.(id);
+      messages.push({ id: `fake-user-${++fakeSeq}`, role: "user", content: text, streaming: false });
+      await sleep(FAKE_DELAY_MS);
+      const reply = { id: `fake-assistant-${++fakeSeq}`, role: "assistant", content: "PONG", streaming: false };
+      messages.push(reply);
       if (isCancelled?.()) throw codedError("cancelled", "cancelled");
+      onDelta?.("PO");
       onDelta?.("NG");
-      return { chatId: chatId ?? "fake-muse-chat", messageId: "assistant-msg-fake", text: "PONG" };
+      return { chatId: id, messageId: reply.id, text: "PONG" };
     },
     close: async () => {},
   };
@@ -97,7 +106,7 @@ function getSession(sessionId) {
   if (session) return session;
   const saved = loadStore()[sessionId];
   if (!saved) throw codedError(-32602, `unknown session: ${sessionId}`);
-  const restored = { id: sessionId, accountId: saved.accountId ?? null, museChatId: saved.museChatId ?? null, cancelled: false };
+  const restored = { id: sessionId, accountId: saved.accountId ?? null, museChatId: saved.museChatId ?? null, cancelled: false, pendingReply: null };
   sessions.set(sessionId, restored);
   return restored;
 }
@@ -123,9 +132,30 @@ async function waitForLock(accountId, session) {
   throw codedError("no_free_account", "All Muse accounts are busy");
 }
 
+async function streamPendingReply(session, driver, pending) {
+  if (!pending.chatId || typeof driver.history !== "function") return;
+  try {
+    const { messages } = await driver.history(pending.chatId);
+    const lastUser = messages.findLastIndex((m) => m.role === "user");
+    const assistant = lastUser < 0 ? null : messages.slice(lastUser + 1).filter((m) => m.role === "assistant").at(-1);
+    const full = assistant?.content ?? "";
+    const rest = full.startsWith(pending.deliveredPrefix) ? full.slice(pending.deliveredPrefix.length) : full;
+    if (!rest) return;
+    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${rest}\n\n` } });
+  } catch {
+    // A failed history read must not block the new prompt.
+  }
+}
+
 async function runPrompt(session, params) {
   session.cancelled = false;
-  const text = promptText(params.prompt).trim();
+  const text = promptText(params.prompt);
+  if (!text) {
+    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Nothing to send to Muse: the message held only BB system instructions." } });
+    return { stopReason: "end_turn" };
+  }
+  let sendStarted = false;
+  let streamed = "";
   try {
     if (!session.accountId) {
       const picked = pickAccount();
@@ -145,13 +175,24 @@ async function runPrompt(session, params) {
           return { stopReason: "end_turn" };
         }
         setStatus(session.accountId, "signed_in");
+        if (session.pendingReply) {
+          const pending = session.pendingReply;
+          session.pendingReply = null;
+          await streamPendingReply(session, driver, pending);
+        }
+        sendStarted = true;
         const result = await driver.send({
           chatId: session.museChatId || undefined,
           text,
           timeoutMs: REPLY_TIMEOUT_MS,
           isCancelled: () => session.cancelled,
+          onChatId: (id) => {
+            session.museChatId = id;
+            saveSession(session);
+          },
           onDelta: (suffix) => {
             if (!suffix) return;
+            streamed += suffix;
             update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: suffix } });
           },
         });
@@ -166,7 +207,12 @@ async function runPrompt(session, params) {
       release();
     }
   } catch (err) {
-    if (err?.code === "cancelled" || session.cancelled) return { stopReason: "cancelled" };
+    if (err?.code === "cancelled" || session.cancelled) {
+      if (sendStarted && session.museChatId) {
+        session.pendingReply = { chatId: session.museChatId, deliveredPrefix: streamed };
+      }
+      return { stopReason: "cancelled" };
+    }
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: errorMessage(err) } });
     return { stopReason: "end_turn" };
   }
@@ -185,7 +231,7 @@ async function handle(method, params) {
         authMethods: [],
       };
     case "session/new": {
-      const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cancelled: false };
+      const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cancelled: false, pendingReply: null };
       sessions.set(session.id, session);
       saveSession(session);
       return { sessionId: session.id, models: modelsBlock() };
