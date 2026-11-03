@@ -1,0 +1,7 @@
+[
+ "```muse-tool\n{\"tool\":\"bash\",\"args\":{\"command\":\"cd sources/serp && grep -n '^#' pages/1.md | head -20; echo '---'; grep -n 'перевод' pages/1.md | head; echo '---tail---'; sed -n '640,681p' pages/1.md | head -30\"}",
+ "```muse-tool\n{\"tool\":\"bash\",\"args\":{\"command\":\"find / -maxdepth 6 -name 'competitors*.md' 2>/dev/null | head -20; echo '---'; ls -la research/reports/\"}",
+ "```muse-tool\n{\"tool\":\"bash\",\"args\":{\"command\":\"ls -la research/reports/ 2>&1 | head -30\"}",
+ "```muse-tool\n{\"tool\":\"bash\",\"args\":{\"command\":\"cd sources/serp && grep -n -i 'неусыпаем' pages/5.md | head; echo '==='; grep -n -i 'неусыпаем' pages/6.md | head; echo '==='; grep -n '^#' pages/5.md pages/6.md pages/8.md | head -30\"}",
+ "```muse-tool\n{\"tool\":\"bash\",\"args\":{\"command\":\"cd sources/serp && grep -n -i 'неусыпаем' pages/5.md | head\"}"
+]
