@@ -59,6 +59,7 @@ On ovh-main (Pier + `/srv/muse-bench/deep-swe` checkout, user `ubuntu`):
 
 ```sh
 N=10 SEED=0 bash bench/deepswe/run-pilot.sh
+# CONCURRENCY=<n> sets --n-concurrent; default 1 — the sandbox serves only the current container
 ```
 
 On the Mac mini (signed-in Muse profile via `musebridge`):
@@ -67,6 +68,10 @@ On the Mac mini (signed-in Muse profile via `musebridge`):
 node bench/deepswe/relay.mjs        # keeps polling the queue
 node bench/deepswe/relay.mjs --once # single pass
 ```
+
+A failed poll round (busy/locked Muse account, ssh hiccup) is logged as
+`round_error` and the loop goes on; the item gets its `.done` when a later
+round succeeds.
 
 After the run:
 

@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { buildPrompt, isDone, relayOnce, sendArgs } from "../bench/deepswe/relay.mjs";
+import { buildPrompt, isDone, relayLoop, relayOnce, sendArgs } from "../bench/deepswe/relay.mjs";
 
 test("buildPrompt names the ssh target, the task text and DONE", () => {
   const prompt = buildPrompt({
@@ -86,4 +86,37 @@ test("relayOnce gives up after maxContinues", async () => {
   assert.equal(results[0].status, "gave_up");
   assert.equal(results[0].turns, 3);
   assert.equal(dones[0].result.status, "gave_up");
+});
+
+test("relayLoop logs round_error on a busy account and writes done next round", async () => {
+  const dones = [];
+  const logs = [];
+  let round = 0;
+  const outcome = await relayLoop({
+    listQueue: async () => {
+      round += 1;
+      return [{ session: "s3", instruction: "Fix Z" }];
+    },
+    send: async ({ chatId }) => {
+      if (round === 1) throw new Error("All Muse accounts are busy");
+      return { chatId: chatId ?? "c", text: "fixed. DONE" };
+    },
+    writeDone: async (session, result) => dones.push({ session, round, result }),
+    log: (entry) => logs.push(entry),
+    sleep: async () => {
+      if (round === 2) throw new Error("stop test loop");
+    },
+  }).then(
+    () => null,
+    (err) => err,
+  );
+
+  assert.equal(outcome?.message, "stop test loop");
+  assert.equal(round, 2);
+  assert.equal(logs[0].event, "round_error");
+  assert.match(logs[0].error, /All Muse accounts are busy/);
+  assert.equal(dones.length, 1);
+  assert.equal(dones[0].session, "s3");
+  assert.equal(dones[0].round, 2);
+  assert.equal(dones[0].result.status, "done");
 });

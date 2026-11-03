@@ -132,14 +132,23 @@ function log(entry) {
   console.log(JSON.stringify(entry));
 }
 
+export async function relayLoop({ once = false, pollSec = 30, sleep, ...deps }) {
+  const wait = sleep ?? ((sec) => new Promise((resolve) => setTimeout(resolve, sec * 1000)));
+  for (;;) {
+    try {
+      await relayOnce(deps);
+    } catch (err) {
+      deps.log?.({ event: "round_error", error: String(err?.message ?? err) });
+    }
+    if (once) return;
+    await wait(pollSec);
+  }
+}
+
 async function main() {
   const once = process.argv.includes("--once");
   const pollSec = Number(process.env.MUSE_RELAY_POLL_SEC ?? "30");
-  for (;;) {
-    await relayOnce({ listQueue, send, writeDone, log, target: BENCH_TARGET });
-    if (once) return;
-    await new Promise((resolve) => setTimeout(resolve, pollSec * 1000));
-  }
+  await relayLoop({ once, pollSec, listQueue, send, writeDone, log, target: BENCH_TARGET });
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
