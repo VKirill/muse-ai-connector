@@ -3,6 +3,8 @@ import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { z } from "zod";
 // @ts-ignore bridge/hub-sync.mjs is plain ESM bundled into the plugin; it has no .d.ts
 import { syncAcrossHosts } from "./bridge/hub-sync.mjs";
+// @ts-ignore launch-spec.mjs is plain ESM bundled into the plugin; it has no .d.ts
+import { museLaunchSpec } from "./launch-spec.mjs";
 
 const accountRow = z.object({
   id: z.string(),
@@ -73,15 +75,6 @@ export const rpcContract = defineRpcContract({
 
 export const MUSE_PROVIDER_ID = "muse";
 export const MUSE_AGENT_COMMAND = "muse-acp";
-
-function defaultLaunchSpec() {
-  return {
-    displayName: "Muse",
-    command: "/bin/sh",
-    args: ["-c", 'exec "$HOME/.muse-bridge/bin/muse-acp" "$@"', MUSE_AGENT_COMMAND],
-    env: {},
-  };
-}
 
 const SETTINGS = {
   agentCommand: {
@@ -161,18 +154,11 @@ export default function plugin(bb: BbPluginApi): void {
     },
     experimental_visibility: "installed",
     experimental_bridgeOptions: {
-      acpLaunchSpec: defaultLaunchSpec(),
+      acpLaunchSpec: museLaunchSpec("") as JsonValue,
     },
     deriveProviderOptions(ctx) {
-      const command = String(ctx.settings.agentCommand ?? "").trim();
-      const spec = command
-        ? { displayName: "Muse", command, args: [] as string[], env: {} }
-        : defaultLaunchSpec();
       return {
-        acpLaunchSpec: {
-          ...spec,
-          permissionCli: { full: ["--bb-permission=full"], workspaceWrite: ["--bb-permission=accept-edits"] },
-        } as JsonValue,
+        acpLaunchSpec: museLaunchSpec(String(ctx.settings.agentCommand ?? "")) as JsonValue,
       };
     },
     models: {
