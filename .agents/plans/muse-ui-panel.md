@@ -58,6 +58,43 @@ BB gives a plugin its own page: `app.slots.navPanel({ id, title, icon, path, com
 - Style: keep the existing Pokecut look (app.css classes, BB CSS variables only; `tests/ui-style.test.mjs` forbids hex colours). Narrow layout: tabs scroll, cards stack. All strings in i18n en + ru.
 - Version 0.3.9 (package.json, package-lock.json root + `packages[""]`, version.ts).
 
+## Task 3 — `muse-panel-layout` (owner's review of 0.3.9, 2026-11-03)
+
+> [!WARNING]
+> Owner's screenshot of 0.3.9: three pill buttons on top, cards as loose text lines («Parallel chats: 10», «Machines: …»), **no limits at all**, two stray buttons «Refresh limits» and «Check again» under the cards, and mixed language («Accounts», «Машины», «Add account», «Убрать»). He wants **one page: tabs on the left, the work area on the right, everything in its place**.
+
+### Layout
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│ ┌────────────────┐ ┌──────────────────────────────────────────────┐  │
+│ │ MUSE           │ │ Аккаунты                      [↻ Обновить]   │  │  ← .muse-toolbar
+│ │ ▸ Аккаунты   2 │ │ 2 аккаунта · 3 машины                        │  │
+│ │   Машины     3 │ ├──────────────────────────────────────────────┤  │
+│ │   Добавить     │ │ ┌──────────────────────────────────────────┐ │  │
+│ │                │ │ │ main  ● вошёл              [⋯ actions]   │ │  │  ← card header
+│ │                │ │ │ Muse Free                                │ │  │
+│ │                │ │ │ ████████░░░░░░░░░░░░░  31% недельного    │ │  │  ← .muse-meter
+│ │                │ │ │ Сброс 7 ноября · Доп. токены: 0% (1B)    │ │  │
+│ │                │ │ │ ─────────────────────────────────────────│ │  │
+│ │                │ │ │ 10 чатов одновременно · использован 19:37│ │  │
+│ │                │ │ │ [MacBook ✓] [MAC Mini ✓] [OVH ✓]         │ │  │
+│ │                │ │ └──────────────────────────────────────────┘ │  │
+│ └────────────────┘ └──────────────────────────────────────────────┘  │
+└──────────────────────────────────────────────────────────────────────┘
+   .muse-sidenav (≈200px)          .muse-workspace (rest)
+```
+
+- **One page**: `.muse-layout` = CSS grid `grid-template-columns: 200px 1fr` (gap from BB spacing vars). Left `.muse-sidenav` is a `role="tablist" aria-orientation="vertical"` list of three items (Accounts / Machines / Add account) with a count badge, the active one highlighted with the Pokecut accent; selecting one calls `toPluginPanel("muse", { subPath })` as now, so deep links keep working. Right `.muse-workspace` holds the page.
+- Below ~720px the grid becomes one column and the side nav turns into a horizontal segmented row at the top (`@media (max-width: 720px)`).
+- **Toolbar** `.muse-toolbar` at the top of the workspace: page title (`pageAccountsTitle` / `pageMachinesTitle` / `pageAddTitle`), a one-line summary under it, and ONE action on the right: «Обновить» — on Accounts it reloads hosts and limits together; on Machines it reloads hosts. Remove the separate «Refresh limits» and «Check again» buttons.
+- **Account card**: header row = label (bold) + status pill + muted id; the actions (Проверить, Скопировать на все машины, Удалить) sit on the right of the header as compact buttons (Удалить styled as danger, asks for confirmation with the «also delete Chrome profile» checkbox inside the confirmation). Body = plan name, `.muse-meter` (a `role="progressbar"` bar with aria-valuenow, the percent as the big number on the right), reset line and extra-tokens line on one muted row; a divider; footer row = parallel chats + last used, then the machine chips. While usage is loading the meter area shows a skeleton with `usageLoading` («Загружаем лимиты…»); an account with `usage:null` and `error:null` after loading shows «Лимит не прочитан» with a retry link; an error shows `usageUnavailable`.
+- **Machines page**: one card per machine in the same card style: header = machine name + online pill + connector version (or Install button); a two-column key/value grid (Chrome, bridge, agent); then a compact table of accounts (label, status, slots `0/10`).
+- **Add page**: a single form card: machine select (machines without Chrome disabled with the reason), label input, primary button; the 3 steps as a numbered list beside or below; the result notice inside the card.
+- **Language**: `detectLocale()` must follow the owner's BB, which is English + the Russifier plugin (it translates the page but leaves `<html lang>` = en). Port the proven rule from the Pokecut theme: `lang` starts with ru → ru; else `<html data-pk-lang>` = ru → ru; else Russifier active → ru (`localStorage['bb-plugin-ru:enabled'] !== 'off'` and any of the first 12 `[data-sidebar="sidebar"] button[aria-label], header button[aria-label]` has Cyrillic); else en. Re-render when `lang` / `data-pk-lang` change (MutationObserver on `<html>` attributes) and retry once at 500 / 2000 / 5000 ms after mount, since the Russifier marks the sidebar late. Every visible string comes from i18n — no hard-coded English left in app.tsx.
+- Style: existing Pokecut look and BB CSS variables only (`tests/ui-style.test.mjs` forbids hex colours); light and dark themes both readable.
+- Version 0.3.10.
+
 ## Checks
 
 - `/tmp/muse-usage-check/check.mjs` — red on base (no `bridge/usage.mjs`).
