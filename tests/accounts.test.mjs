@@ -12,6 +12,7 @@ import {
   listAccounts,
   pickAccount,
   removeAccount,
+  setMaxParallel,
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
@@ -106,6 +107,8 @@ test("pickAccount throws no_free_account when all signed-in accounts are locked"
   withHome(() => {
     const a = addAccount("A");
     const b = addAccount("B");
+    setMaxParallel(a.id, 1);
+    setMaxParallel(b.id, 1);
     setStatus(a.id, "signed_in");
     setStatus(b.id, "signed_in");
     const releaseA = acquire(a.id, { owner: "test" });
@@ -130,6 +133,7 @@ test("pickAccount throws no_signed_in_account when none is signed in", () => {
 test("acquire replaces a lock whose pid is dead", () => {
   withHome((home) => {
     const account = addAccount("Deadlock");
+    setMaxParallel(account.id, 1);
     setStatus(account.id, "signed_in");
     const file = path.join(home, "locks", `${account.id}.lock`);
     fs.mkdirSync(path.dirname(file), { recursive: true });
