@@ -8,6 +8,10 @@ const en = {
   navAccounts: "Accounts",
   navMachines: "Machines",
   navAdd: "Add account",
+  pageAccountsTitle: "Accounts",
+  pageMachinesTitle: "Machines",
+  pageAddTitle: "Add account",
+  summaryAccounts: "{accounts} accounts · {machines} machines",
   usagePlan: "Plan {name}",
   usageResets: "Resets {when}",
   usageExtraTokens: "Extra tokens: {value}",
@@ -15,6 +19,10 @@ const en = {
   usageUsed: "{n}% used",
   usageUnlimited: "Unlimited",
   usageParallel: "Parallel chats: {n}",
+  usageLoading: "Loading limits…",
+  usageNotRead: "Limit not read",
+  weeklyUsed: "{n}% of weekly limit",
+  retry: "Retry",
   accountOnMachines: "Machines: {names}",
   refreshLimits: "Refresh limits",
   busySlots: "{busy}/{max}",
@@ -56,6 +64,9 @@ const en = {
   remove: "Remove",
   purgeProfile: "Delete Chrome profile",
   removeConfirm: "Remove account {label}?",
+  confirmRemove: "Remove {label}?",
+  confirm: "Confirm",
+  cancel: "Cancel",
   statusSignedIn: "signed in",
   statusSignedOut: "signed out",
   statusUnknown: "unknown",
@@ -66,7 +77,7 @@ const en = {
   offline: "offline",
   noAnswer: "no answer",
   error: "Error",
-  refresh: "Check again",
+  refresh: "Refresh",
   hostOffline: "This machine is offline.",
 };
 
@@ -80,6 +91,10 @@ const ru: Record<I18nKey, string> = {
   navAccounts: "Аккаунты",
   navMachines: "Машины",
   navAdd: "Добавить аккаунт",
+  pageAccountsTitle: "Аккаунты",
+  pageMachinesTitle: "Машины",
+  pageAddTitle: "Добавить аккаунт",
+  summaryAccounts: "{accounts} аккаунта · {machines} машины",
   usagePlan: "Тариф {name}",
   usageResets: "Сброс {when}",
   usageExtraTokens: "Доп. токены: {value}",
@@ -87,6 +102,10 @@ const ru: Record<I18nKey, string> = {
   usageUsed: "использовано {n}%",
   usageUnlimited: "Без лимита",
   usageParallel: "Параллельные чаты: {n}",
+  usageLoading: "Загружаем лимиты…",
+  usageNotRead: "Лимит не прочитан",
+  weeklyUsed: "{n}% недельного лимита",
+  retry: "Повторить",
   accountOnMachines: "Машины: {names}",
   refreshLimits: "Обновить лимиты",
   busySlots: "{busy}/{max}",
@@ -128,6 +147,9 @@ const ru: Record<I18nKey, string> = {
   remove: "Удалить",
   purgeProfile: "Удалить профиль Chrome",
   removeConfirm: "Удалить аккаунт {label}?",
+  confirmRemove: "Удалить {label}?",
+  confirm: "Подтвердить",
+  cancel: "Отмена",
   statusSignedIn: "вошёл",
   statusSignedOut: "не вошёл",
   statusUnknown: "неизвестно",
@@ -138,15 +160,51 @@ const ru: Record<I18nKey, string> = {
   offline: "не в сети",
   noAnswer: "нет ответа",
   error: "Ошибка",
-  refresh: "Проверить снова",
+  refresh: "Обновить",
   hostOffline: "Эта машина не в сети.",
 };
 
 export type Locale = "en" | "ru";
 
+const CYRILLIC = /[\u0400-\u04FF]/;
+const SIDEBAR_LABELS = '[data-sidebar="sidebar"] button[aria-label], header button[aria-label]';
+
+function ruPluginEnabled(): boolean {
+  try {
+    return globalThis.localStorage?.getItem("bb-plugin-ru:enabled") !== "off";
+  } catch {
+    return true;
+  }
+}
+
+function hasCyrillicSidebar(): boolean {
+  try {
+    const nodes = globalThis.document?.querySelectorAll?.(SIDEBAR_LABELS);
+    if (!nodes) return false;
+    const limit = Math.min(12, nodes.length);
+    for (let i = 0; i < limit; i++) {
+      const label = nodes[i]?.getAttribute?.("aria-label") ?? "";
+      if (CYRILLIC.test(label)) return true;
+    }
+  } catch {
+    return false;
+  }
+  return false;
+}
+
 export function detectLocale(): Locale {
-  const lang = globalThis.document?.documentElement?.lang ?? "";
-  return lang.toLowerCase().startsWith("ru") ? "ru" : "en";
+  try {
+    const el = globalThis.document?.documentElement;
+    if (!el) return "en";
+    const lang = (el.lang ?? "").toLowerCase();
+    if (lang.startsWith("ru")) return "ru";
+    const pk = (el.getAttribute?.("data-pk-lang") ?? "").toLowerCase();
+    if (pk === "ru" || pk.startsWith("ru")) return "ru";
+    if (ruPluginEnabled() && hasCyrillicSidebar()) return "ru";
+  } catch {
+    return "en";
+  }
+  return "en";
 }
 
 export function t(key: I18nKey, vars?: Record<string, string>, locale: Locale = detectLocale()): string {

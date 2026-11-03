@@ -78,11 +78,11 @@ test("an account whose usage fails carries error and usage null", async () => {
   assert.deepEqual(rows[0].hosts, ["h1"]);
 });
 
-test("version 0.3.9 in package.json, package-lock.json and version.ts", () => {
+test("version 0.3.10 in package.json, package-lock.json and version.ts", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
-  assert.equal(pkg.version, "0.3.9");
-  assert.equal(lock.version, "0.3.9");
-  assert.equal(lock.packages[""].version, "0.3.9");
-  assert.equal(PLUGIN_VERSION, "0.3.9");
+  assert.equal(pkg.version, PLUGIN_VERSION);
+  assert.equal(lock.version, PLUGIN_VERSION);
+  assert.equal(lock.packages[""].version, PLUGIN_VERSION);
+  assert.equal(PLUGIN_VERSION, "0.3.10");
 });
