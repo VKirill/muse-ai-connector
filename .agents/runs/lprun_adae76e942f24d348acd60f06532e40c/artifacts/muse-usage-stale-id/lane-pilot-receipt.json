@@ -1,0 +1,171 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-usage-stale-id",
+  "attemptId": "lpattempt_ba95a9a277314076994c878123fdd026",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_v7i2c5xtbp",
+  "ownsPaths": [
+    "bridge/usage.mjs",
+    "tests/usage-drift.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": "bridge/usage.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/paths.mjs",
+      "windows": []
+    },
+    {
+      "path": "tests/usage.test.mjs",
+      "windows": []
+    }
+  ],
+  "output": "Done. All four verification commands pass.\n\n## Changed files\n\n- `bridge/usage.mjs` — `readUsage` now walks an `actionIdCandidates` chain: cached id → built-in `DEFAULT_ACTION_ID` → discovery from the page's chunk scripts (runs lazily, only after every known id fails). Any non-auth failure (409, 404, or a 200 without a readable payload) counts as drift; `forgetActionId` evicts a failed id from `rememberedActionId` and from `cache/usage-action.json` when the file holds that id. The first id returning a readable payload wins and is cached when it differs from the current one. 401/403 still throw `auth_failed` from `readPayload`/`discoverActionId` before any fallback. After all candidates fail it throws `usage_unavailable` with the last status (e.g. `Muse usage request failed (409)`), or \"not readable\" when the last response was an unparseable 200.\n- `tests/usage-drift.test.mjs` — new suite: stale-id→409 falls back to built-in and leaves the cache; cached+built-in both 409 falls back to the discovered chunk-script id which gets cached; unreadable-200 drift; all-fail→`usage_unavailable`; 401/403→`auth_failed`. Each test points `MUSE_BRIDGE_HOME` at a fresh `mkdtemp` under `/tmp` and re-imports the module with a query string for isolation.\n\nNote: `tests/usage.test.mjs` reads (but doesn't write) the real `~/.muse-bridge` cache file in its first test — unchanged per the plan, naming it here as instructed.\n\n## Verification\n\n- `node /tmp/muse-usage-drift/check.mjs \"$PWD\"` → OK\n- `node /tmp/muse-usage-check/check.mjs \"$PWD\"` → OK\n- `node --test tests/usage-drift.test.mjs tests/usage.test.mjs` → 9 pass, 0 fail\n- `npm run typecheck` → exit 0\n\n```plan-fact\n[{\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/usage.mjs:161-186\",\"bridge/usage.mjs:56-64\",\"cmd:node /tmp/muse-usage-drift/check.mjs \\\"$PWD\\\"\"]},{\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/usage-drift.test.mjs\",\"cmd:node --test tests/usage-drift.test.mjs tests/usage.test.mjs\",\"cmd:node /tmp/muse-usage-check/check.mjs \\\"$PWD\\\"\",\"cmd:npm run typecheck\"]}]\n```\n\nAPPROACH: Turned the single-shot read into a lazy candidate chain (cached → built-in → page-script discovery); a failed id is evicted so the cache self-heals, while auth errors still abort immediately.\n\nLESSON: Muse answers a wrong Next-Action id with 409, not just 404 — drift must mean \"no readable payload for any reason except auth\", and the fix is to let the cache repair itself instead of adding retries.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-usage-drift/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "786cc67ce96504bb0706a29335df905bf0db8ec0ea88ac3d5ded7de0bc81c089",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ba95a9a277314076994c878123fdd026/muse-ai-connector",
+      "revision": {
+        "head": "5e85e1381750959d443c6ca0e38ce97cae9c116f",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "node /tmp/muse-usage-check/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "e79003e09fd0a044f189a88c8bc6c33ff2424163b2d76dc0341a0cff13184d3f",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ba95a9a277314076994c878123fdd026/muse-ai-connector",
+      "revision": {
+        "head": "5e85e1381750959d443c6ca0e38ce97cae9c116f",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "node --test tests/usage-drift.test.mjs tests/usage.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ a cached action id answering 409 falls back to the built-in id and leaves the cache (25.823209ms)\r\n✔ when the cached and built-in ids both answer 409, the chunk script id is used and cached (1.745083ms)\r\n✔ a cached id returning an unreadable 200 is treated as drift too (0.914208ms)\r\n✔ when every candidate fails, rejects usage_unavailable with the last status and evicts the stale id (0.968375ms)\r\n✔ 401 and 403 still reject with auth_failed (0.576417ms)\r\n✔ UNLIMITED usage state parses to percentUsed null (2.135125ms)\r\n✔ usage results are cached per account for 5 minutes unless cache: false (0.299958ms)\r\n✔ accounts usage --json prints {accounts:[{id,label,status,usage,error}]} (3.10525ms)\r\n✔ musebridge accounts usage --json on an empty registry prints accounts:[] (216.858459ms)\r\nℹ tests 9\r\nℹ suites 0\r\nℹ pass 9\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 446.355917\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "50261a953e0f88e5d96eec81ed30af07c56c1c9f95cffc546422a55810ad7c2a",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ba95a9a277314076994c878123fdd026/muse-ai-connector",
+      "revision": {
+        "head": "5e85e1381750959d443c6ca0e38ce97cae9c116f",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-muse@0.3.9 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.1\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "3d4b0fc5b8c12f562f8e055166374b49df6d3f57560b18d77673e24f924cc443",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_ba95a9a277314076994c878123fdd026/muse-ai-connector",
+      "revision": {
+        "head": "5e85e1381750959d443c6ca0e38ce97cae9c116f",
+        "dirty": 2
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "80b9b05c0915642f4eb3268ecc8cb8561f4335fe79ce7398f0cccbfd80a36849",
+      "sentPlanSha256": null,
+      "sourceLength": 1322,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_ba95a9a277314076994c878123fdd026",
+      "threadId": "thr_v7i2c5xtbp",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- Правя тестовый файл из owns_paths, меняй только ожидаемые значения внутри существующих строгих assert (deepEqual/equal) и добавляй новые проверки рядом — не удаляй строки assert и не ослабляй строгую проверку до assert.ok/includes/truthiness; перед ответом перечитай свой diff по тестам и верни всё, что стало слабее: test_fit помечает это как сломанную проверку, и попытки сгорают до лимита.\n- In muse-ai-connector, every check script or test that imports bridge/ modules must set MUSE_BRIDGE_HOME to a fresh mkdtemp under /tmp before the import; never let a check write into the real ~/.muse-bridge (accounts, cookies, cache).",
+        "rulesPicked": {
+          "total": 19,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_af70160574711f7e",
+            "rule_93325eb4e64a63d7"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- bridge/usage.mjs L1-L183 (sha256 a795698c)\n- bridge/paths.mjs L1-L18 (sha256 dfd668b3)\n- tests/usage.test.mjs L1-L142 (sha256 1392d1a3)",
+        "executionPacketSha256": "0bb97ece1748cddc8a52c91813736282086717b0f56cb1cbcab560cf848cac0d",
+        "pmReadContext": "",
+        "agent": "Lane Pilot writer",
+        "promptChars": 8553,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_c33971a86ef3d36f",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-usage-stale-id",
+  "task_sha256": "16b1e3e054b36c6c5b672b604290a606ac0297bf573ee6cf73966797d23b286c",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "2f843862cdcfbd8f6d842e708a211d18fb2483a3d3cae6dc4b7c6c648e778322",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T17:58:09.211Z",
+  "model": "swe-2-high"
+}

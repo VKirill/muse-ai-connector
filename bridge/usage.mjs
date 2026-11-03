@@ -53,6 +53,16 @@ function rememberActionId(id) {
   }
 }
 
+function forgetActionId(id) {
+  if (rememberedActionId === id) rememberedActionId = null;
+  try {
+    const saved = readJson(actionIdPath(), null);
+    if (saved && saved.actionId === id) fs.unlinkSync(actionIdPath());
+  } catch {
+    /* best effort */
+  }
+}
+
 function usageHeaders(cookies, actionId) {
   const headers = {
     Accept: "text/x-component",
@@ -148,21 +158,33 @@ function mapUsage(payload) {
   };
 }
 
-async function readUsage(fetchImpl, cookies) {
-  let res = await postAction(fetchImpl, cookies, currentActionId());
-  let payload = await readPayload(res);
-  const drift = res.status === 404 || (res.ok && !payload);
-  if (drift) {
-    const discovered = await discoverActionId(fetchImpl, cookies);
-    if (discovered && discovered !== currentActionId()) {
-      rememberActionId(discovered);
-      res = await postAction(fetchImpl, cookies, discovered);
-      payload = await readPayload(res);
-    }
+async function* actionIdCandidates(fetchImpl, cookies) {
+  const seen = new Set();
+  for (const id of [currentActionId(), DEFAULT_ACTION_ID]) {
+    if (seen.has(id)) continue;
+    seen.add(id);
+    yield id;
   }
-  if (!res.ok) throw unavailableError(`Muse usage request failed (${res.status})`);
-  if (!payload) throw unavailableError("Muse usage response was not readable");
-  return mapUsage(payload);
+  const discovered = await discoverActionId(fetchImpl, cookies);
+  if (discovered && !seen.has(discovered)) yield discovered;
+}
+
+async function readUsage(fetchImpl, cookies) {
+  let lastStatus = 0;
+  let lastOk = false;
+  for await (const actionId of actionIdCandidates(fetchImpl, cookies)) {
+    const res = await postAction(fetchImpl, cookies, actionId);
+    const payload = await readPayload(res);
+    if (res.ok && payload) {
+      if (actionId !== currentActionId()) rememberActionId(actionId);
+      return mapUsage(payload);
+    }
+    forgetActionId(actionId);
+    lastStatus = res.status;
+    lastOk = res.ok;
+  }
+  if (lastStatus && !lastOk) throw unavailableError(`Muse usage request failed (${lastStatus})`);
+  throw unavailableError("Muse usage response was not readable");
 }
 
 /**
