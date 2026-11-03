@@ -7,6 +7,8 @@ import { promisify } from "node:util";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
+// @ts-ignore bridge/runtime-install.mjs is plain ESM bundled into host.mjs; it has no .d.ts
+import { installRuntime, runtimeStatus } from "./bridge/runtime-install.mjs";
 
 export { experimental_acpProviderBridge as experimental_providerBridge } from "@get-bb/plugin-sdk/provider-bridge/acp";
 
@@ -31,6 +33,15 @@ const accountRow = z.object({
   lastCheckedAt: z.string(),
 });
 
+const runtimeState = z.object({
+  installed: z.boolean(),
+  version: z.string().nullable(),
+  path: z.string().nullable(),
+  dev: z.string().nullable(),
+  installing: z.boolean(),
+  error: z.string().nullable(),
+});
+
 const hostStatus = z.object({
   platform: z.string(),
   chromeFound: z.boolean(),
@@ -38,6 +49,7 @@ const hostStatus = z.object({
   bridgeFound: z.boolean(),
   bridgeVersion: z.string().nullable(),
   agentFound: z.boolean(),
+  runtime: runtimeState,
   accounts: z.array(accountRow),
   problems: z.array(z.string()),
 });
@@ -48,10 +60,12 @@ const hostContract = defineRpcContract({
   addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
+  installRuntime: { input: z.object({}).strict(), output: hostStatus },
 });
 
 function findCommand(name: string): string | null {
   const dirs = [
+    path.join(HOME, ".muse-bridge/bin"),
     ...(process.env.PATH ?? "").split(path.delimiter),
     path.join(HOME, ".local/bin"),
     path.join(HOME, ".agents/bin"),
@@ -89,6 +103,44 @@ function stderrTail(text: string, n = 8): string {
   return lines.slice(-n).join("\n");
 }
 
+const runtime = {
+  attempted: false,
+  running: null as Promise<void> | null,
+  error: null as string | null,
+};
+
+function runtimeInfo() {
+  const st = runtimeStatus({ home: HOME });
+  return {
+    installed: st.installed,
+    version: st.version,
+    path: st.path,
+    dev: st.dev,
+    installing: runtime.running !== null,
+    error: runtime.error,
+  };
+}
+
+async function performInstall(version: string): Promise<void> {
+  try {
+    const res = await installRuntime({ version, home: HOME });
+    runtime.error = res.ok ? null : (res.error ?? "runtime install failed");
+  } catch (e) {
+    runtime.error = e instanceof Error ? e.message : String(e);
+  } finally {
+    runtime.running = null;
+  }
+}
+
+function ensureRuntime(): void {
+  if (process.platform === "win32" || runtime.attempted || runtime.running) return;
+  const st = runtimeStatus({ home: HOME });
+  if (st.dev) return;
+  if (st.installed && st.version === pluginVersion()) return;
+  runtime.attempted = true;
+  runtime.running = performInstall(pluginVersion());
+}
+
 async function runBridge(args: string[], timeout: number): Promise<{ ok: boolean; stdout: string; stderr: string }> {
   const bin = findCommand("musebridge");
   if (!bin) return { ok: false, stdout: "", stderr: "musebridge is not on PATH" };
@@ -110,16 +162,19 @@ async function readStatus(extraProblems: string[] = []): Promise<HostStatus> {
   const chrome = chromePath();
   const bin = findCommand("musebridge");
   const agent = findCommand("muse-acp");
+  const rt = runtimeInfo();
   const out: HostStatus = {
     platform: process.platform,
     chromeFound: chrome !== null,
     chromePath: chrome,
     bridgeFound: bin !== null,
-    bridgeVersion: bin ? pluginVersion() : null,
+    bridgeVersion: bin ? (rt.dev ? "dev" : (rt.version ?? pluginVersion())) : null,
     agentFound: agent !== null,
+    runtime: rt,
     accounts: [],
     problems,
   };
+  if (process.platform === "win32") problems.push("Muse runtime self-install is not supported on Windows.");
   if (!chrome) problems.push("Google Chrome is required (channel chrome).");
   if (!bin) {
     problems.push("musebridge is not on PATH of the BB host daemon.");
@@ -151,7 +206,17 @@ function failNote(result: { ok: boolean; stderr: string }, fallback: string): st
 export default experimental_defineHostEntry({
   contract: hostContract,
   handlers: {
-    status: () => readStatus(),
+    status: () => {
+      ensureRuntime();
+      return readStatus();
+    },
+    async installRuntime() {
+      if (process.platform === "win32") return readStatus(["Muse runtime is not supported on Windows."]);
+      runtime.attempted = true;
+      if (!runtime.running) runtime.running = performInstall(pluginVersion());
+      await runtime.running;
+      return readStatus();
+    },
     async addAccount({ label }) {
       const result = await runBridge(["accounts", "add", label], ADD_TIMEOUT_MS);
       return readStatus(failNote(result, "musebridge accounts add failed."));
