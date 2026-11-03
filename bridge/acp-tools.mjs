@@ -1,0 +1,300 @@
+import { execFile } from "node:child_process";
+import fs from "node:fs";
+import path from "node:path";
+import { promisify } from "node:util";
+
+const execFileP = promisify(execFile);
+
+export const OUTPUT_CAP = 20 * 1024;
+const GREP_MAX_MATCHES = 200;
+const GREP_MAX_FILES = 5000;
+const GREP_MAX_FILE_BYTES = 512 * 1024;
+const BASH_DEFAULT_TIMEOUT_SEC = 120;
+const BASH_MAX_TIMEOUT_SEC = 600;
+const SKIP_DIRS = new Set([".git", "node_modules"]);
+
+const TOOL_BLOCK_RE = /```muse-tool[ \t]*\r?\n?([\s\S]*?)```/g;
+
+function toolError(message) {
+  const err = new Error(message);
+  err.code = "tool_error";
+  return err;
+}
+
+function cap(text, limit = OUTPUT_CAP) {
+  const s = String(text ?? "");
+  return s.length > limit ? `${s.slice(0, limit)}\n…[truncated ${s.length - limit} chars]` : s;
+}
+
+/**
+ * Finds the LAST ```muse-tool fenced block in a Muse reply.
+ * Returns {kind:"none", text} | {kind:"call", name, args, thought} | {kind:"error", name, error, thought}.
+ * `thought` is the reply text outside that block (streams to BB as agent_thought_chunk).
+ */
+export function parseToolCall(reply) {
+  const text = String(reply ?? "");
+  TOOL_BLOCK_RE.lastIndex = 0;
+  let match;
+  let last = null;
+  while ((match = TOOL_BLOCK_RE.exec(text)) !== null) last = match;
+  if (!last) return { kind: "none", text };
+  const thought = (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim();
+  let parsed;
+  try {
+    parsed = JSON.parse(last[1].trim());
+  } catch (err) {
+    return { kind: "error", name: "muse-tool", error: `invalid muse-tool JSON: ${err.message}`, args: {}, thought };
+  }
+  const name = typeof parsed?.tool === "string" ? parsed.tool : "";
+  const args = parsed && typeof parsed.args === "object" && parsed.args !== null ? parsed.args : {};
+  if (!name) return { kind: "error", name: "muse-tool", error: "muse-tool block has no tool name", args, thought };
+  return { kind: "call", name, args, thought };
+}
+
+export function resultMessage(name, ok, output) {
+  return `TOOL RESULT ${name} (${ok ? "ok" : "error"}):\n${output}`;
+}
+
+export function toolKind(name) {
+  switch (name) {
+    case "read_file":
+      return "read";
+    case "write_file":
+    case "edit_file":
+      return "edit";
+    case "list_dir":
+    case "grep":
+      return "search";
+    case "bash":
+      return "execute";
+    default:
+      return "other";
+  }
+}
+
+export function toolTitle(name, args) {
+  const hint = args?.path ?? args?.command ?? args?.pattern ?? "";
+  const title = hint ? `${name} ${hint}` : name;
+  return title.length > 100 ? `${title.slice(0, 97)}…` : title;
+}
+
+/** Resolves a tool path inside the session cwd; throws when it escapes. */
+export function resolveSessionPath(cwd, p) {
+  if (typeof p !== "string" || !p.trim()) throw toolError("path must be a non-empty string");
+  const root = path.resolve(cwd);
+  const abs = path.resolve(root, p);
+  if (abs !== root && !abs.startsWith(root + path.sep)) throw toolError(`path outside workspace: ${p}`);
+  return abs;
+}
+
+export function buildIntro(cwd) {
+  return `You are Muse, an agent working inside a BB chat. Your workspace is:
+${cwd}
+
+You cannot call functions directly. To use a tool, END your reply with exactly one fenced block:
+
+\`\`\`muse-tool
+{"tool":"<name>","args":{...}}
+\`\`\`
+
+The bridge runs the tool and sends you the next message in this chat:
+TOOL RESULT <name> (ok|error):
+<output>
+
+Then continue. A reply with no muse-tool block is your final answer to the user.
+Text before the block is shown to the user as your thought — keep it short.
+
+Tools (paths are relative to the workspace; absolute paths inside it also work):
+- read_file {path, offset?, limit?} — read a file (offset = first line, 1-based; limit = line count)
+- write_file {path, content} — write a whole file
+- edit_file {path, old, new} — replace one exact, unique occurrence of 'old' with 'new'
+- list_dir {path?} — list a directory (default: workspace root)
+- grep {pattern, path?} — regex search, prints file:line:match
+- bash {command, timeout_sec?} — run /bin/bash -lc in the workspace (default 120s, max 600s)
+
+Rules: paths outside the workspace are refused; edit_file fails when 'old' matches zero or
+several times; outputs are capped at ~20 KB — read or grep narrower when a result is truncated.
+`;
+}
+
+/**
+ * Runs one local tool. ctx: {cwd, sessionId, fsRead, fsWrite, clientRequest(method, params)}.
+ * fsRead/fsWrite route file reads/writes through the ACP client's fs/* requests.
+ * Returns {ok: true, output} | {ok: false, output}.
+ */
+export async function runTool(name, args, ctx) {
+  try {
+    switch (name) {
+      case "read_file":
+        return { ok: true, output: await toolRead(args, ctx) };
+      case "write_file":
+        return { ok: true, output: await toolWrite(args, ctx) };
+      case "edit_file":
+        return { ok: true, output: await toolEdit(args, ctx) };
+      case "list_dir":
+        return { ok: true, output: toolList(args, ctx) };
+      case "grep":
+        return { ok: true, output: toolGrep(args, ctx) };
+      case "bash":
+        return { ok: true, output: await toolBash(args, ctx) };
+      default:
+        return { ok: false, output: `unknown tool: ${name}` };
+    }
+  } catch (err) {
+    return { ok: false, output: cap(err?.message || String(err)) };
+  }
+}
+
+function lineRange(args) {
+  const line = Math.max(1, Math.floor(Number(args?.offset ?? args?.line) || 1));
+  const limit = Math.max(0, Math.floor(Number(args?.limit) || 0));
+  return { line, limit };
+}
+
+async function readLocal(abs, { line, limit }) {
+  const content = await fs.promises.readFile(abs, "utf8");
+  const lines = content.split("\n");
+  const slice = limit > 0 ? lines.slice(line - 1, line - 1 + limit) : lines.slice(line - 1);
+  return cap(slice.join("\n"));
+}
+
+async function toolRead(args, ctx) {
+  const abs = resolveSessionPath(ctx.cwd, args?.path);
+  const { line, limit } = lineRange(args);
+  if (ctx.fsRead) {
+    const res = await ctx.clientRequest("fs/read_text_file", {
+      sessionId: ctx.sessionId,
+      path: abs,
+      ...(line > 1 ? { line } : {}),
+      ...(limit > 0 ? { limit } : {}),
+    });
+    return cap(res?.content ?? "");
+  }
+  return readLocal(abs, { line, limit });
+}
+
+async function writeLocal(abs, content) {
+  await fs.promises.mkdir(path.dirname(abs), { recursive: true });
+  await fs.promises.writeFile(abs, content);
+}
+
+async function toolWrite(args, ctx) {
+  const abs = resolveSessionPath(ctx.cwd, args?.path);
+  const content = String(args?.content ?? "");
+  if (ctx.fsWrite) {
+    await ctx.clientRequest("fs/write_text_file", { sessionId: ctx.sessionId, path: abs, content });
+  } else {
+    await writeLocal(abs, content);
+  }
+  return `wrote ${Buffer.byteLength(content)} bytes to ${args.path}`;
+}
+
+async function toolEdit(args, ctx) {
+  const abs = resolveSessionPath(ctx.cwd, args?.path);
+  const oldText = String(args?.old ?? "");
+  const newText = String(args?.new ?? "");
+  if (!oldText) throw toolError("edit_file: 'old' must be a non-empty string");
+  let content;
+  if (ctx.fsRead) {
+    const res = await ctx.clientRequest("fs/read_text_file", { sessionId: ctx.sessionId, path: abs });
+    content = String(res?.content ?? "");
+  } else {
+    content = await fs.promises.readFile(abs, "utf8");
+  }
+  const count = content.split(oldText).length - 1;
+  if (count === 0) throw toolError("edit_file: 'old' text not found");
+  if (count > 1) throw toolError(`edit_file: 'old' text matches ${count} times, expected exactly 1`);
+  const next = content.replace(oldText, newText);
+  if (ctx.fsWrite) {
+    await ctx.clientRequest("fs/write_text_file", { sessionId: ctx.sessionId, path: abs, content: next });
+  } else {
+    await fs.promises.writeFile(abs, next);
+  }
+  return `edited ${args.path}`;
+}
+
+function toolList(args, ctx) {
+  const abs = resolveSessionPath(ctx.cwd, args?.path ?? ".");
+  const entries = fs
+    .readdirSync(abs, { withFileTypes: true })
+    .map((e) => (e.isDirectory() ? `${e.name}/` : e.name))
+    .sort();
+  return cap(entries.join("\n"));
+}
+
+function toolGrep(args, ctx) {
+  const pattern = args?.pattern;
+  if (typeof pattern !== "string" || !pattern) throw toolError("grep: 'pattern' must be a non-empty string");
+  let re;
+  try {
+    re = new RegExp(pattern);
+  } catch (err) {
+    throw toolError(`grep: bad pattern: ${err.message}`);
+  }
+  const abs = resolveSessionPath(ctx.cwd, args?.path ?? ".");
+  const root = path.resolve(ctx.cwd);
+  const matches = [];
+  let files = 0;
+  let truncated = false;
+  const grepFile = (file) => {
+    files++;
+    let lines;
+    try {
+      const stat = fs.statSync(file);
+      if (!stat.isFile() || stat.size > GREP_MAX_FILE_BYTES) return;
+      lines = fs.readFileSync(file, "utf8").split("\n");
+    } catch {
+      return;
+    }
+    const rel = path.relative(root, file) || file;
+    for (let i = 0; i < lines.length; i++) {
+      if (matches.length >= GREP_MAX_MATCHES) {
+        truncated = true;
+        return;
+      }
+      if (re.test(lines[i])) matches.push(`${rel}:${i + 1}:${lines[i]}`);
+    }
+  };
+  const walk = (dir) => {
+    if (files >= GREP_MAX_FILES || truncated) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (files >= GREP_MAX_FILES || truncated) return;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!SKIP_DIRS.has(e.name)) walk(p);
+      } else {
+        grepFile(p);
+      }
+    }
+  };
+  const stat = fs.statSync(abs, { throwIfNoEntry: false });
+  if (!stat) throw toolError(`grep: no such path: ${args?.path ?? "."}`);
+  if (stat.isDirectory()) walk(abs);
+  else grepFile(abs);
+  const suffix = truncated ? `\n…[stopped at ${GREP_MAX_MATCHES} matches]` : "";
+  return cap(matches.length ? matches.join("\n") + suffix : "no matches");
+}
+
+async function toolBash(args, ctx) {
+  const command = String(args?.command ?? "");
+  if (!command.trim()) throw toolError("bash: 'command' must be a non-empty string");
+  const timeoutSec = Math.min(BASH_MAX_TIMEOUT_SEC, Math.max(1, Number(args?.timeout_sec) || BASH_DEFAULT_TIMEOUT_SEC));
+  try {
+    const res = await execFileP("/bin/bash", ["-lc", command], {
+      cwd: ctx.cwd,
+      timeout: timeoutSec * 1000,
+      maxBuffer: 4 * 1024 * 1024,
+    });
+    return cap(`exit 0\n${res.stdout}${res.stderr}`.trimEnd());
+  } catch (err) {
+    const out = `${err?.stdout ?? ""}${err?.stderr ?? ""}`.trimEnd();
+    if (err?.killed) throw toolError(`bash: killed after ${timeoutSec}s\n${cap(out)}`.trimEnd());
+    return cap(`exit ${err?.code ?? "?"}\n${out}`.trimEnd());
+  }
+}
