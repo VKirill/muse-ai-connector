@@ -586,7 +586,11 @@ async function cmdAccountsExport(args) {
     process.stderr.write(`No cookies for ${id}\n`);
     process.exit(1);
   }
-  process.stdout.write(`${JSON.stringify({ id: account.id, label: account.label, cookies })}\n`);
+  const out = { id: account.id, label: account.label, cookies };
+  if (Number.isInteger(account.maxParallel) && account.maxParallel >= 1) {
+    out.maxParallel = account.maxParallel;
+  }
+  process.stdout.write(`${JSON.stringify(out)}\n`);
 }
 
 async function cmdAccountsImport(args) {
@@ -603,10 +607,12 @@ async function cmdAccountsImport(args) {
   }
   let id = args[0];
   let cookies = payload;
+  let maxParallel;
   if (payload && typeof payload === "object" && !Array.isArray(payload) && Array.isArray(payload.cookies)) {
     cookies = payload.cookies;
     id = id ?? (typeof payload.id === "string" ? payload.id : undefined);
     label = label ?? (typeof payload.label === "string" ? payload.label : undefined);
+    maxParallel = payload.maxParallel;
   }
   if (!id) {
     process.stderr.write("Usage: musebridge accounts import <id> [--label <label>]\n");
@@ -618,6 +624,7 @@ async function cmdAccountsImport(args) {
   }
   saveCookies(id, cookies);
   ensureRegistered(id, label ?? id);
+  if (maxParallel !== undefined) setMaxParallel(id, maxParallel);
   setStatus(id, "signed_in");
   process.stdout.write(`imported ${cookies.length} cookies for ${id}\n`);
 }

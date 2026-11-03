@@ -61,10 +61,22 @@ const hostContract = defineRpcContract({
   installRuntime: { input: z.object({}).strict(), output: hostStatus },
   exportAccount: {
     input: z.object({ id: z.string() }).strict(),
-    output: z.object({ id: z.string(), label: z.string(), cookies: z.array(z.record(z.string(), z.unknown())) }),
+    output: z.object({
+      id: z.string(),
+      label: z.string(),
+      cookies: z.array(z.record(z.string(), z.unknown())),
+      maxParallel: z.number().int().min(1).max(50).optional(),
+    }),
   },
   importAccount: {
-    input: z.object({ id: z.string(), label: z.string(), cookies: z.array(z.record(z.string(), z.unknown())) }).strict(),
+    input: z
+      .object({
+        id: z.string(),
+        label: z.string(),
+        cookies: z.array(z.record(z.string(), z.unknown())),
+        maxParallel: z.number().int().min(1).max(50).optional(),
+      })
+      .strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
   },
 });
@@ -234,15 +246,30 @@ export default experimental_defineHostEntry({
     async exportAccount({ id }) {
       const result = await runBridge(["accounts", "export", id, "--json"], LIST_TIMEOUT_MS);
       if (!result.ok) throw new Error(stderrTail(result.stderr) || "musebridge accounts export failed.");
-      const parsed = JSON.parse(result.stdout) as { id?: unknown; label?: unknown; cookies?: unknown };
-      return {
+      const parsed = JSON.parse(result.stdout) as { id?: unknown; label?: unknown; cookies?: unknown; maxParallel?: unknown };
+      const out: {
+        id: string;
+        label: string;
+        cookies: Record<string, unknown>[];
+        maxParallel?: number;
+      } = {
         id: typeof parsed.id === "string" ? parsed.id : id,
         label: typeof parsed.label === "string" ? parsed.label : id,
         cookies: Array.isArray(parsed.cookies) ? (parsed.cookies as Record<string, unknown>[]) : [],
       };
+      if (Number.isInteger(parsed.maxParallel) && (parsed.maxParallel as number) >= 1) {
+        out.maxParallel = parsed.maxParallel as number;
+      }
+      return out;
     },
-    async importAccount({ id, label, cookies }) {
-      const result = await runBridge(["accounts", "import", id, "--label", label], LIST_TIMEOUT_MS, JSON.stringify(cookies));
+    async importAccount({ id, label, cookies, maxParallel }) {
+      const payload: { id: string; label: string; cookies: Record<string, unknown>[]; maxParallel?: number } = {
+        id,
+        label,
+        cookies,
+      };
+      if (typeof maxParallel === "number") payload.maxParallel = maxParallel;
+      const result = await runBridge(["accounts", "import", id, "--label", label], LIST_TIMEOUT_MS, JSON.stringify(payload));
       return { ok: result.ok, error: result.ok ? null : stderrTail(result.stderr) || "musebridge accounts import failed." };
     },
   },
