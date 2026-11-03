@@ -2,12 +2,12 @@ import { execFile } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { defineRpcContract } from "@get-bb/plugin-sdk";
 import { experimental_defineHostEntry } from "@get-bb/plugin-sdk/host";
 import { z } from "zod";
 // @ts-ignore bridge/runtime-install.mjs is plain ESM bundled into host.mjs; it has no .d.ts
 import { installRuntime, runtimeStatus } from "./bridge/runtime-install.mjs";
+import { PLUGIN_VERSION } from "./version.js";
 
 export { experimental_acpProviderBridge as experimental_providerBridge } from "@get-bb/plugin-sdk/provider-bridge/acp";
 
@@ -90,16 +90,6 @@ function findCommand(name: string): string | null {
   return null;
 }
 
-function pluginVersion(): string {
-  try {
-    const file = fileURLToPath(new URL("./package.json", import.meta.url));
-    const pkg = JSON.parse(fs.readFileSync(file, "utf8")) as { version?: string };
-    return pkg.version ?? "0.1.0";
-  } catch {
-    return "0.1.0";
-  }
-}
-
 function chromePath(): string | null {
   return CHROME_CANDIDATES.find((p) => fs.existsSync(p)) ?? null;
 }
@@ -142,9 +132,9 @@ function ensureRuntime(): void {
   if (process.platform === "win32" || runtime.attempted || runtime.running) return;
   const st = runtimeStatus({ home: HOME });
   if (st.dev) return;
-  if (st.installed && st.version === pluginVersion()) return;
+  if (st.installed && st.version === PLUGIN_VERSION) return;
   runtime.attempted = true;
-  runtime.running = performInstall(pluginVersion());
+  runtime.running = performInstall(PLUGIN_VERSION);
 }
 
 async function runBridge(args: string[], timeout: number, stdin?: string): Promise<{ ok: boolean; stdout: string; stderr: string }> {
@@ -178,7 +168,7 @@ async function readStatus(extraProblems: string[] = []): Promise<HostStatus> {
     chromeFound: chrome !== null,
     chromePath: chrome,
     bridgeFound: bin !== null,
-    bridgeVersion: bin ? (rt.dev ? "dev" : (rt.version ?? pluginVersion())) : null,
+    bridgeVersion: bin ? (rt.dev ? "dev" : (rt.version ?? PLUGIN_VERSION)) : null,
     agentFound: agent !== null,
     runtime: rt,
     accounts: [],
@@ -223,7 +213,7 @@ export default experimental_defineHostEntry({
     async installRuntime() {
       if (process.platform === "win32") return readStatus(["Muse runtime is not supported on Windows."]);
       runtime.attempted = true;
-      if (!runtime.running) runtime.running = performInstall(pluginVersion());
+      if (!runtime.running) runtime.running = performInstall(PLUGIN_VERSION);
       await runtime.running;
       return readStatus();
     },

@@ -109,6 +109,41 @@ export default function plugin(bb: BbPluginApi): void {
   const settings = bb.settings.define(SETTINGS);
   const host = bb.hosts.experimental_client({ contract: hostContract });
 
+  // A host `status` call makes the host install its runtime when it is missing
+  // or older than PLUGIN_VERSION. Warm every connected host at plugin start and
+  // every 10 minutes so the runtime lands without the settings screen opening.
+  const WARMUP_INTERVAL_MS = 10 * 60 * 1000;
+  const warmRuntimes = async (): Promise<void> => {
+    try {
+      const listed = await bb.sdk.hosts.list();
+      await Promise.all(
+        listed
+          .filter((h) => h.status === "connected")
+          .map(async (h) => {
+            try {
+              await host.call("status", {}, { hostId: h.id });
+            } catch (e) {
+              bb.log.debug(`Muse runtime warm-up on ${h.name || h.id} failed: ${e instanceof Error ? e.message : String(e)}`);
+            }
+          }),
+      );
+    } catch (e) {
+      bb.log.debug(`Muse runtime warm-up failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+  bb.background.service("runtime-warmup", {
+    start(signal) {
+      void warmRuntimes();
+      const timer = setInterval(() => void warmRuntimes(), WARMUP_INTERVAL_MS);
+      return new Promise<void>((resolve) => {
+        signal.addEventListener("abort", () => {
+          clearInterval(timer);
+          resolve();
+        }, { once: true });
+      });
+    },
+  });
+
   const agentEnv = (v: Record<string, string | number | boolean | undefined>) => ({
     MUSE_HEADLESS: v.headless === false ? "0" : "1",
     MUSE_REPLY_TIMEOUT_SEC: String(Math.max(10, Math.floor(Number(v.replyTimeoutSec ?? 180)))),
