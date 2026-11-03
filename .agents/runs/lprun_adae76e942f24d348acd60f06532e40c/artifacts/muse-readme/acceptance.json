@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-readme",
+  "task_sha256": "25a053c9ac587d542be56aa7b09c79ae22d32c519863d0de2002ba4578cb61a7",
+  "attempt": 2,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "fe965f76ff3017172480728b7f06565fbba04a708b7dd22ec37131a5f697b502",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T13:01:40.876Z",
+  "model": "swe-2-high"
+}
