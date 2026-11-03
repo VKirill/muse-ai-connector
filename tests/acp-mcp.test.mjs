@@ -90,7 +90,7 @@ async function runToolLoop(env, mcpServers, toolName) {
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
-  fs.writeFileSync(script, JSON.stringify([block({ tool: toolName, args: { text: "zz" } }), "done"]));
+  fs.writeFileSync(script, JSON.stringify([block({ tool: toolName, args: { text: "zz" } }), "done\n[[done]]"]));
   const sent = path.join(home, "sent.jsonl");
   const agent = startAgent({ MUSE_BRIDGE_FAKE: "1", MUSE_BRIDGE_HOME: home, MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent, ...env });
   try {
@@ -168,7 +168,7 @@ test("tool_schema returns the MCP tool's input schema", async () => {
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
-  fs.writeFileSync(script, JSON.stringify([block({ tool: "tool_schema", args: { name: "mcp__fake__echo" } }), "done"]));
+  fs.writeFileSync(script, JSON.stringify([block({ tool: "tool_schema", args: { name: "mcp__fake__echo" } }), "done\n[[done]]"]));
   const sent = path.join(home, "sent.jsonl");
   const agent = startAgent({ MUSE_BRIDGE_FAKE: "1", MUSE_BRIDGE_HOME: home, MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
   try {
