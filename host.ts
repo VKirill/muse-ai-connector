@@ -29,6 +29,34 @@ const accountRow = z.object({
   locked: z.boolean(),
   lastUsedAt: z.string(),
   lastCheckedAt: z.string(),
+  busy: z.number().int().nonnegative().optional(),
+  max: z.number().int().positive().optional(),
+});
+
+const usageSnapshot = z.object({
+  plan: z.string().nullable().optional(),
+  planCode: z.string().nullable().optional(),
+  isPaid: z.boolean().optional(),
+  state: z.string().nullable().optional(),
+  percentUsed: z.number().nullable().optional(),
+  resetsAt: z.number().nullable().optional(),
+  quotaStatus: z.string().nullable().optional(),
+  periodLabel: z.string().nullable().optional(),
+  extraTokensTotal: z.number().nullable().optional(),
+  extraTokensBalance: z.number().nullable().optional(),
+  extraTokensLeftLabel: z.string().nullable().optional(),
+  checkedAt: z.string().optional(),
+});
+
+const usageError = z.object({
+  code: z.string(),
+  message: z.string(),
+});
+
+const usageAccount = z.object({
+  id: z.string(),
+  usage: usageSnapshot.nullable(),
+  error: usageError.nullable(),
 });
 
 const runtimeState = z.object({
@@ -78,6 +106,10 @@ const hostContract = defineRpcContract({
       })
       .strict(),
     output: z.object({ ok: z.boolean(), error: z.string().nullable() }),
+  },
+  usage: {
+    input: z.object({ id: z.string().optional() }).strict(),
+    output: z.object({ accounts: z.array(usageAccount) }),
   },
 });
 
@@ -271,6 +303,32 @@ export default experimental_defineHostEntry({
       if (typeof maxParallel === "number") payload.maxParallel = maxParallel;
       const result = await runBridge(["accounts", "import", id, "--label", label], LIST_TIMEOUT_MS, JSON.stringify(payload));
       return { ok: result.ok, error: result.ok ? null : stderrTail(result.stderr) || "musebridge accounts import failed." };
+    },
+    async usage({ id }) {
+      const args = id ? ["accounts", "usage", id, "--json"] : ["accounts", "usage", "--json"];
+      const result = await runBridge(args, CHECK_TIMEOUT_MS);
+      if (!result.ok) throw new Error(stderrTail(result.stderr) || "musebridge accounts usage failed.");
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(result.stdout);
+      } catch {
+        throw new Error("musebridge accounts usage --json was not valid JSON.");
+      }
+      const rows = (parsed as { accounts?: unknown })?.accounts;
+      const checked = z.array(usageAccount).safeParse(
+        Array.isArray(rows)
+          ? rows.map((row) => {
+              const r = row as { id?: unknown; usage?: unknown; error?: unknown };
+              return {
+                id: typeof r.id === "string" ? r.id : "",
+                usage: r.usage ?? null,
+                error: r.error ?? null,
+              };
+            })
+          : rows,
+      );
+      if (!checked.success) throw new Error("musebridge accounts usage --json was not an account usage list.");
+      return { accounts: checked.data };
     },
   },
 });
