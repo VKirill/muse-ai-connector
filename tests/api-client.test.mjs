@@ -7,7 +7,7 @@ import zlib from "node:zlib";
 import { saveCookies } from "../bridge/cookies.mjs";
 import { chatStreamBody, createMuseClient, openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { decodeFrame, encodeResponse } from "../bridge/protocol/envelope.mjs";
-import { bootstrapHttps, buildGatewayUrl, parseBootstrapFromHtml } from "../bridge/protocol/gateway.mjs";
+import { bootstrapHttps, buildGatewayUrl, defaultSocketFactory, parseBootstrapFromHtml } from "../bridge/protocol/gateway.mjs";
 import { createStreamDecoder } from "../bridge/protocol/ndjson.mjs";
 
 const flightHtml = fs.readFileSync(
@@ -102,6 +102,8 @@ test("bootstrapHttps uses the page flight context and sends Origin/Referer on /a
   assert.equal(boot.vmId, "vm-123");
   assert.equal(boot.authToken, "s0:abc");
   assert.equal(boot.notaryToken, "nt-1");
+  assert.equal(boot.gatewayUrl, "wss://hatch.metaaivm.com/v1/noise");
+  assert.equal(boot.vmGatewayUrl, "wss://gw.example/");
   const apiCalls = seen.filter((s) => s.url.includes("/api/"));
   assert.ok(apiCalls.length > 0);
   for (const call of apiCalls) {
@@ -112,6 +114,34 @@ test("bootstrapHttps uses the page flight context and sends Origin/Referer on /a
     seen.some((s) => s.url.replace(/\/$/, "") === "https://muse.ai/api/hatch/token"),
     false,
   );
+});
+
+test("bootstrapHttps dials hatch.metaaivm.com even when the page lists a per-VM host", async () => {
+  const html =
+    '<script>self.__next_f.push([1,"7c:{\\"cvmMigrationInventorySnapshot\\":{\\"vms\\":[{\\"vmId\\":\\"vm-9\\",\\"vmName\\":\\"n9\\",\\"gatewayUrl\\":\\"wss://n9.metaaivm.com/\\",\\"vmState\\":\\"RUNNING\\"}]},\\"gatewayUrl\\":\\"wss://n9.metaaivm.com/\\",\\"vmName\\":\\"n9\\",\\"authToken\\":\\"s0:t9\\",\\"noiseNotaryToken\\":\\"nt9\\",\\"backendAuthStatus\\":\\"authenticated\\"}\\n"])</script>';
+  const fakeFetch = async (url) =>
+    String(url).replace(/\/$/, "") === "https://muse.ai"
+      ? new Response(html, { status: 200, headers: { "content-type": "text/html" } })
+      : new Response('{"status":"ok"}', { status: 200, headers: { "content-type": "application/json" } });
+  const boot = await bootstrapHttps({ cookies: [], fetchImpl: fakeFetch });
+  assert.equal(boot.gatewayUrl, "wss://hatch.metaaivm.com/v1/noise");
+  assert.equal(boot.vmGatewayUrl, "wss://n9.metaaivm.com/");
+  assert.equal(boot.vmId, "vm-9");
+});
+
+test("default socket factory sends Origin https://muse.ai", () => {
+  let captured;
+  class FakeSocket {
+    constructor(url, opts) {
+      captured = { url, opts };
+      this.binaryType = "";
+    }
+  }
+  const socket = defaultSocketFactory("wss://hatch.metaaivm.com/v1/noise", FakeSocket);
+  assert.equal(captured.opts.headers.Origin, "https://muse.ai");
+  assert.match(captured.opts.headers["User-Agent"], /Chrome/);
+  assert.equal(captured.opts.perMessageDeflate, false);
+  assert.equal(socket.binaryType, "arraybuffer");
 });
 
 test("openTransport browser calls the fake browser driver and not the gateway", async () => {
