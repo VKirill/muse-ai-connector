@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { readJson, updateJson, writeJsonAtomic } from "./json-file.mjs";
 import { bridgeHome, profileDir } from "./paths.mjs";
 
 const STALE_LOCK_MS = 30 * 60 * 1000;
@@ -49,7 +50,7 @@ function emptyRegistry() {
 function saveRegistry(registry) {
   const home = bridgeHome();
   fs.mkdirSync(home, { recursive: true });
-  fs.writeFileSync(registryPath(), `${JSON.stringify(registry, null, 2)}\n`);
+  writeJsonAtomic(registryPath(), registry);
 }
 
 function slugify(label) {
@@ -91,13 +92,21 @@ function migrateDefaultIfNeeded() {
   });
 }
 
-function loadRegistry() {
-  migrateDefaultIfNeeded();
-  const file = registryPath();
-  if (!fs.existsSync(file)) return emptyRegistry();
-  const parsed = JSON.parse(fs.readFileSync(file, "utf8"));
+function normalizeRegistry(parsed) {
   if (!parsed || !Array.isArray(parsed.accounts)) return emptyRegistry();
   return { version: 1, accounts: parsed.accounts };
+}
+
+function loadRegistry() {
+  migrateDefaultIfNeeded();
+  return normalizeRegistry(readJson(registryPath(), null));
+}
+
+function updateRegistry(fn) {
+  return updateJson(registryPath(), null, (parsed) => {
+    const registry = parsed === null ? loadRegistry() : normalizeRegistry(parsed);
+    return fn(registry);
+  });
 }
 
 function requireAccount(registry, id) {
@@ -195,23 +204,25 @@ export function listAccounts() {
  */
 export function addAccount(label) {
   if (!label || !String(label).trim()) throw codedError("invalid_label", "Account label is required");
-  const registry = loadRegistry();
-  const used = new Set(registry.accounts.map((a) => a.id));
-  const id = uniqueId(label, used);
-  const at = nowIso();
-  const dir = profileDir(id);
-  fs.mkdirSync(dir, { recursive: true });
-  const account = {
-    id,
-    label: String(label).trim(),
-    profileDir: dir,
-    status: "unknown",
-    createdAt: at,
-    lastUsedAt: at,
-    lastCheckedAt: at,
-  };
-  registry.accounts.push(account);
-  saveRegistry(registry);
+  let account;
+  updateRegistry((registry) => {
+    const used = new Set(registry.accounts.map((a) => a.id));
+    const id = uniqueId(label, used);
+    const at = nowIso();
+    const dir = profileDir(id);
+    fs.mkdirSync(dir, { recursive: true });
+    account = {
+      id,
+      label: String(label).trim(),
+      profileDir: dir,
+      status: "unknown",
+      createdAt: at,
+      lastUsedAt: at,
+      lastCheckedAt: at,
+    };
+    registry.accounts.push(account);
+    return registry;
+  });
   return account;
 }
 
@@ -220,10 +231,11 @@ export function addAccount(label) {
  * @param {{ purge?: boolean }} [opts]
  */
 export function removeAccount(id, { purge = false } = {}) {
-  const registry = loadRegistry();
-  requireAccount(registry, id);
-  registry.accounts = registry.accounts.filter((a) => a.id !== id);
-  saveRegistry(registry);
+  updateRegistry((registry) => {
+    requireAccount(registry, id);
+    registry.accounts = registry.accounts.filter((a) => a.id !== id);
+    return registry;
+  });
   for (const { file } of slotLockFiles(id)) {
     try {
       fs.unlinkSync(file);
@@ -240,20 +252,24 @@ export function removeAccount(id, { purge = false } = {}) {
  */
 export function setStatus(id, status) {
   if (!STATUSES.has(status)) throw codedError("invalid_status", `Invalid status: ${status}`);
-  const registry = loadRegistry();
-  const account = requireAccount(registry, id);
-  account.status = status;
-  account.lastCheckedAt = nowIso();
-  saveRegistry(registry);
+  let account;
+  updateRegistry((registry) => {
+    account = requireAccount(registry, id);
+    account.status = status;
+    account.lastCheckedAt = nowIso();
+    return registry;
+  });
   return account;
 }
 
 /** @param {string} id */
 export function touch(id) {
-  const registry = loadRegistry();
-  const account = requireAccount(registry, id);
-  account.lastUsedAt = nowIso();
-  saveRegistry(registry);
+  let account;
+  updateRegistry((registry) => {
+    account = requireAccount(registry, id);
+    account.lastUsedAt = nowIso();
+    return registry;
+  });
   return account;
 }
 
@@ -267,10 +283,12 @@ export function setMaxParallel(id, value) {
   if (!Number.isInteger(n) || n < 1 || n > MAX_PARALLEL_CAP) {
     throw codedError("invalid_max_parallel", `maxParallel must be an integer 1..${MAX_PARALLEL_CAP}, got ${value}`);
   }
-  const registry = loadRegistry();
-  const account = requireAccount(registry, id);
-  account.maxParallel = n;
-  saveRegistry(registry);
+  let account;
+  updateRegistry((registry) => {
+    account = requireAccount(registry, id);
+    account.maxParallel = n;
+    return registry;
+  });
   return account;
 }
 

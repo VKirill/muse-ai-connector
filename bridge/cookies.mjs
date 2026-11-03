@@ -1,5 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
+import { readJson, writeJsonAtomic } from "./json-file.mjs";
 import { bridgeHome } from "./paths.mjs";
 
 /** @param {string} accountId */
@@ -20,8 +21,7 @@ function ensureAccountDir(accountId) {
 }
 
 function writePrivateJson(file, value) {
-  fs.writeFileSync(file, `${JSON.stringify(value)}\n`, { mode: 0o600 });
-  fs.chmodSync(file, 0o600);
+  writeJsonAtomic(file, value, { mode: 0o600 });
 }
 
 /**
@@ -36,12 +36,13 @@ export function saveCookies(id, cookies) {
 /** @param {string} id */
 export function loadCookies(id) {
   const file = cookiesPath(id);
-  if (!fs.existsSync(file)) {
+  const cookies = fs.existsSync(file) ? readJson(file, null) : null;
+  if (cookies === null) {
     const err = new Error(`No cookies for account ${id}`);
     err.code = "missing_cookies";
     throw err;
   }
-  return JSON.parse(fs.readFileSync(file, "utf8"));
+  return cookies;
 }
 
 function domainMatches(cookieDomain, host) {
