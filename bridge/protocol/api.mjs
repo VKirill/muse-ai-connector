@@ -21,6 +21,13 @@ function replyTimeoutError() {
   return err;
 }
 
+function sleep(ms) {
+  return new Promise((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    timer.unref?.();
+  });
+}
+
 function loadOrCreateNodeId(accountId) {
   const file = nodeIdPath(accountId);
   try {
@@ -90,6 +97,17 @@ function historyMessages(chatId, payload) {
       streaming: false,
       createdAt: event.occurred_at_ms ? new Date(event.occurred_at_ms).toISOString() : null,
       model: null,
+    });
+  }
+  for (const message of payload?.result?.messages ?? payload?.messages ?? []) {
+    if (!message?.role) continue;
+    messages.push({
+      id: message.message_id ?? message.id,
+      role: message.role,
+      content: message.display_text ?? message.content ?? message.text ?? "",
+      streaming: false,
+      createdAt: message.occurred_at_ms ? new Date(message.occurred_at_ms).toISOString() : null,
+      model: message.model ?? null,
     });
   }
   return { chatId, revision: null, hasMore: false, messages };
@@ -171,51 +189,105 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
 
     let sawTaskDone = false;
     let sawAgentIdle = false;
+    let lastStreamSeq = 0;
+    let lastChatEventSeq = 0;
+    const seenDeltaSeqs = new Set();
     let finishedEarly;
     const early = new Promise((resolve) => {
       finishedEarly = resolve;
     });
+    const deadline = Date.now() + timeoutMs;
+    const timeout = new Promise((_, reject) => {
+      const timer = setTimeout(() => reject(replyTimeoutError()), timeoutMs);
+      timer.unref?.();
+    });
+    let backoff = 1_000;
 
     function maybeFinish() {
       if (sawTaskDone && sawAgentIdle) finishedEarly();
     }
 
-    const sub = await gw.stream(
-      {
-        method: "POST",
-        path: "/chat/subscribe",
-        body: {
-          after_stream_seq: 0,
-          after_chat_event_seq: 0,
-          capabilities: SUBSCRIBE_CAPABILITIES,
-          session_id: resolvedChatId,
+    function onSubEvent(event) {
+      if (isCancelled?.()) return;
+      const streamSeq = event?.seq ?? event?.stream_seq ?? event?.payload?.stream_seq;
+      if (Number.isFinite(streamSeq) && streamSeq > lastStreamSeq) lastStreamSeq = streamSeq;
+      const chatSeq = event?.chat_event_seq ?? event?.payload?.chat_event_seq;
+      if (Number.isFinite(chatSeq) && chatSeq > lastChatEventSeq) lastChatEventSeq = chatSeq;
+      const name = eventName(event);
+      const payload = eventPayload(event);
+      if (name === "task.status") {
+        if (payload.status && payload.status !== "running") sawTaskDone = true;
+        maybeFinish();
+      }
+      if (name === "agent.status") {
+        if (payload.activity_code !== "working") sawAgentIdle = true;
+        maybeFinish();
+      }
+      const delta = extractDelta(event);
+      if (!delta) return;
+      if (Number.isFinite(streamSeq)) {
+        if (seenDeltaSeqs.has(streamSeq)) return;
+        seenDeltaSeqs.add(streamSeq);
+      }
+      onDelta?.(delta);
+    }
+
+    function subscribe() {
+      return gw.stream(
+        {
+          method: "POST",
+          path: "/chat/subscribe",
+          body: {
+            after_stream_seq: lastStreamSeq,
+            after_chat_event_seq: lastChatEventSeq,
+            capabilities: SUBSCRIBE_CAPABILITIES,
+            session_id: resolvedChatId,
+          },
         },
-      },
-      (event) => {
-        if (isCancelled?.()) return;
-        const name = eventName(event);
-        const payload = eventPayload(event);
-        if (name === "task.status") {
-          if (payload.status && payload.status !== "running") sawTaskDone = true;
-          maybeFinish();
-        }
-        if (name === "agent.status") {
-          if (payload.activity_code !== "working") sawAgentIdle = true;
-          maybeFinish();
-        }
-        const delta = extractDelta(event);
-        if (delta) onDelta?.(delta);
-      },
-    );
+        onSubEvent,
+      );
+    }
 
-    const timeout = new Promise((_, reject) => {
-      setTimeout(() => reject(replyTimeoutError()), timeoutMs).unref?.();
-    });
+    async function resubscribe() {
+      for (;;) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw replyTimeoutError();
+        try {
+          const next = await Promise.race([subscribe(), timeout]);
+          next.finished?.catch(() => {});
+          return next;
+        } catch (err) {
+          if (err?.code === "auth_failed" || err?.code === "reply_timeout") throw err;
+        }
+        await sleep(Math.min(backoff, deadline - Date.now()));
+        backoff = Math.min(backoff * 2, 30_000);
+      }
+    }
 
+    let sub = await resubscribe();
     try {
-      await Promise.race([early, sub.finished, timeout]);
+      for (;;) {
+        if (isCancelled?.()) {
+          const err = new Error("cancelled");
+          err.code = "cancelled";
+          throw err;
+        }
+        const outcome = await Promise.race([
+          early.then(() => "done"),
+          sub.finished.then(() => "ended", (err) => err),
+          timeout.catch((err) => err),
+        ]);
+        if (outcome === "done") break;
+        if (outcome?.code === "reply_timeout" || outcome?.code === "auth_failed") throw outcome;
+        sub.stop?.();
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw replyTimeoutError();
+        await sleep(Math.min(backoff, remaining));
+        backoff = Math.min(backoff * 2, 30_000);
+        sub = await resubscribe();
+      }
     } finally {
-      sub.stop?.();
+      sub?.stop?.();
     }
 
     if (isCancelled?.()) {
