@@ -104,14 +104,18 @@ fewest busy slots, then the least recently used — parallel work spreads across
 `muse-acp` speaks ACP: BB starts it per machine and it maps each BB session to a Muse side chat
 (kept in `sessions.json`). Muse cannot call our tools natively, so the agent runs a text protocol:
 the first message of a Muse chat tells Muse it works inside the workspace `<cwd>` and may end a
-reply with exactly one ```` ```muse-tool ```` fenced block `{"tool":"<name>","args":{...}}`. The
-agent runs the tool on the machine and sends the result back as `TOOL RESULT <name> (ok|error)`;
-the reply continues until Muse ends its final answer with a `[[done]]` line.
+reply with up to eight ```` ```muse-tool ```` fenced blocks `{"tool":"<name>","args":{...}}`. The
+agent runs the blocks in order on the machine and sends the results back as one message with a
+`TOOL RESULT <n>/<total> <name> (ok|error)` section per call; the reply continues until Muse ends
+its final answer with a `[[done]]` line.
 
 - **Local tools:** `read_file`, `write_file`, `edit_file` (exact unique match), `list_dir`,
-  `grep`, `bash` (`/bin/bash -lc` in the workspace, default 120 s, max 600 s), `tool_schema`.
+  `grep`, `glob` (file names matching a pattern, skips `.git`/`node_modules`),
+  `apply_patch` (unified diff via `git apply`, `patch -p1` outside a git repo),
+  `bash` (`/bin/bash -lc` in the workspace, default 120 s, max 600 s), `tool_schema`.
   Paths resolve inside the session workspace — anything outside is refused; tool output is
-  capped at ~20 KB. When the client announces `fs.readTextFile`/`fs.writeTextFile`, file reads
+  capped at ~8 KB per call and ~24 KB per message. When the client announces
+  `fs.readTextFile`/`fs.writeTextFile`, file reads
   and writes go through the ACP client so BB sees the edits.
 - **MCP servers** the chat passes in `session/new` (stdio, or streamable HTTP) are started and
   exposed as `mcp__<server>__<tool>`; `tool_schema` returns any tool's input schema. A server
@@ -344,15 +348,18 @@ musebridge accounts set <id> --max-parallel <n>
 `muse-acp` говорит ACP: BB запускает его на машине, и он связывает каждую сессию BB с боковым
 чатом Muse (сохраняется в `sessions.json`). Muse не умеет вызывать наши инструменты напрямую,
 поэтому агент ведёт текстовый протокол: первое сообщение чата Muse объясняет, что работа идёт в
-каталоге `<cwd>`, и что ответ можно завершить ровно одним блоком ```` ```muse-tool ````
-`{"tool":"<name>","args":{...}}`. Агент выполняет инструмент на машине и отправляет результат
-как `TOOL RESULT <name> (ok|error)`; цикл продолжается, пока Muse не закончит финальный ответ
-строкой `[[done]]`.
+каталоге `<cwd>`, и что ответ можно завершить до восьми блоков ```` ```muse-tool ````
+`{"tool":"<name>","args":{...}}`. Агент выполняет блоки по порядку на машине и отправляет
+результаты одним сообщением с секцией `TOOL RESULT <n>/<total> <name> (ok|error)` на каждый
+вызов; цикл продолжается, пока Muse не закончит финальный ответ строкой `[[done]]`.
 
 - **Локальные инструменты:** `read_file`, `write_file`, `edit_file` (точное единственное
-  совпадение), `list_dir`, `grep`, `bash` (`/bin/bash -lc` в рабочем каталоге, таймаут по
+  совпадение), `list_dir`, `grep`, `glob` (имена файлов по шаблону, пропускает `.git`/`node_modules`),
+  `apply_patch` (унифицированный diff через `git apply`, `patch -p1` вне git-репозитория),
+  `bash` (`/bin/bash -lc` в рабочем каталоге, таймаут по
   умолчанию 120 с, максимум 600 с), `tool_schema`. Пути решаются внутри рабочего каталога сессии —
-  снаружи отказ; вывод ограничен ~20 КБ. Когда клиент объявляет `fs.readTextFile`/`fs.writeTextFile`,
+  снаружи отказ; вывод ограничен ~8 КБ на вызов и ~24 КБ на сообщение. Когда клиент объявляет
+  `fs.readTextFile`/`fs.writeTextFile`,
   чтение и запись идут через ACP-клиент, и BB видит правки.
 - **MCP-серверы** чата из `session/new` (stdio или streamable HTTP) стартуют и доступны как
   `mcp__<server>__<tool>`; `tool_schema` возвращает схему входа любого инструмента. Сервер,

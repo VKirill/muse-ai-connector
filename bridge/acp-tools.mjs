@@ -1,12 +1,18 @@
 import { execFile } from "node:child_process";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { listSkills, readSkill } from "./acp-skills.mjs";
 
 const execFileP = promisify(execFile);
 
-export const OUTPUT_CAP = 20 * 1024;
+export const OUTPUT_CAP = 8 * 1024;
+export const MESSAGE_CAP = 24 * 1024;
+export const MAX_TOOL_CALLS = 8;
+const OUTPUT_HEAD = 6 * 1024;
+const OUTPUT_TAIL = 2 * 1024;
+const GLOB_MAX_LINES = 500;
 const GREP_MAX_MATCHES = 200;
 const GREP_MAX_FILES = 5000;
 const GREP_MAX_FILE_BYTES = 512 * 1024;
@@ -56,6 +62,22 @@ const LOCAL_TOOL_SCHEMAS = {
       required: ["pattern"],
     },
   },
+  glob: {
+    description: "List files matching a glob pattern (e.g. src/**/*.ts); skips .git and node_modules.",
+    inputSchema: {
+      type: "object",
+      properties: { pattern: { type: "string" }, path: { type: "string" } },
+      required: ["pattern"],
+    },
+  },
+  apply_patch: {
+    description: "Apply a unified diff relative to the workspace root (git apply, or patch -p1 outside a git repo).",
+    inputSchema: {
+      type: "object",
+      properties: { patch: { type: "string" } },
+      required: ["patch"],
+    },
+  },
   bash: {
     description: "Run /bin/bash -lc in the workspace (default timeout 120s, max 600s).",
     inputSchema: {
@@ -84,9 +106,17 @@ function toolError(message) {
   return err;
 }
 
-function cap(text, limit = OUTPUT_CAP) {
+export function cap(text, limit = OUTPUT_CAP) {
   const s = String(text ?? "");
-  return s.length > limit ? `${s.slice(0, limit)}\n…[truncated ${s.length - limit} chars]` : s;
+  if (s.length <= limit) return s;
+  const tail = Math.min(OUTPUT_TAIL, Math.floor(limit / 4));
+  let head = limit - tail;
+  for (;;) {
+    const marker = `\n… ${s.length - head - tail} bytes cut …\n`;
+    const next = Math.max(0, limit - tail - marker.length);
+    if (next === head) return s.slice(0, head) + marker + s.slice(-tail);
+    head = next;
+  }
 }
 
 function lastMatch(re, text) {
@@ -194,6 +224,47 @@ export function parseToolCall(reply) {
   return parseFromOpener(text);
 }
 
+/**
+ * Finds ALL ```muse-tool blocks in a Muse reply, in order. Each opener is scanned
+ * as a JSON value (fences are ignored), so a block cut off mid-JSON or one whose
+ * closing fence sits inside a string still resolves; a truly cut block becomes an
+ * error entry and the remaining blocks still parse. At most MAX_TOOL_CALLS calls
+ * are returned; `dropped` counts the rest.
+ * Returns {kind:"none", text} | {kind:"calls", calls, thought, dropped} where each
+ * call is {kind:"call", name, args} | {kind:"error", name, error}.
+ */
+export function parseToolCalls(reply) {
+  const text = String(reply ?? "");
+  const openers = [];
+  TOOL_OPEN_RE.lastIndex = 0;
+  let match;
+  while ((match = TOOL_OPEN_RE.exec(text)) !== null) {
+    openers.push({ index: match.index, end: match.index + match[0].length });
+  }
+  if (!openers.length) return { kind: "none", text };
+  const calls = [];
+  const thoughtParts = [text.slice(0, openers[0].index)];
+  let dropped = 0;
+  for (let i = 0; i < openers.length; i++) {
+    const segEnd = i + 1 < openers.length ? openers[i + 1].index : text.length;
+    const scanned = scanJsonValue(text.slice(openers[i].end, segEnd));
+    let entry;
+    if (scanned.inString) {
+      entry = { kind: "error", name: "muse-tool", error: "muse-tool block was cut off inside a string", args: {} };
+    } else {
+      try {
+        entry = finishToolPayload(JSON.parse(scanned.json + scanned.closers), "");
+      } catch (err) {
+        entry = { kind: "error", name: "muse-tool", error: `invalid muse-tool JSON: ${err.message}`, args: {} };
+      }
+    }
+    if (calls.length < MAX_TOOL_CALLS) calls.push(entry);
+    else dropped += 1;
+    thoughtParts.push(scanned.rest.replace(TRAILING_FENCE_RE, ""));
+  }
+  return { kind: "calls", calls, thought: thoughtParts.join("").trim(), dropped };
+}
+
 const DONE_TAIL_RE = /([ \t]*\*{0,2}\[\[done\]\]\*{0,2})+[ \t]*$/i;
 
 /**
@@ -207,8 +278,8 @@ export function stripDoneMarker(reply) {
   return trimmed.replace(DONE_TAIL_RE, "").replace(/\s+$/, "");
 }
 
-export function resultMessage(name, ok, output) {
-  return `TOOL RESULT ${name} (${ok ? "ok" : "error"}):\n${output}`;
+export function resultMessage(name, ok, output, index = 1, total = 1) {
+  return `TOOL RESULT ${index}/${total} ${name} (${ok ? "ok" : "error"}):\n${output}`;
 }
 
 export function toolKind(name) {
@@ -217,9 +288,11 @@ export function toolKind(name) {
       return "read";
     case "write_file":
     case "edit_file":
+    case "apply_patch":
       return "edit";
     case "list_dir":
     case "grep":
+    case "glob":
       return "search";
     case "bash":
       return "execute";
@@ -252,14 +325,16 @@ muse-tool blocks; never use your own shell or tools for it — they would look a
 different machine. Your first step is list_dir on the workspace root, then read the
 files the task needs.
 
-You cannot call functions directly. To use a tool, END your reply with exactly one fenced block:
+You cannot call functions directly. To use tools, END your reply with up to 8 fenced blocks:
 
 \`\`\`muse-tool
 {"tool":"<name>","args":{...}}
 \`\`\`
 
-The bridge runs the tool and sends you the next message in this chat:
-TOOL RESULT <name> (ok|error):
+Put independent reads and searches in one reply; send edits once you know what to change.
+The bridge runs the blocks in order and sends you one next message in this chat, one
+section per call:
+TOOL RESULT <n>/<total> <name> (ok|error):
 <output>
 
 Then continue. When you have finished and this is your final answer to the user, end it
@@ -273,12 +348,15 @@ Tools (paths are relative to the workspace; absolute paths inside it also work):
 - edit_file {path, old, new} — replace one exact, unique occurrence of 'old' with 'new'
 - list_dir {path?} — list a directory (default: workspace root)
 - grep {pattern, path?} — regex search, prints file:line:match
+- glob {pattern, path?} — files matching a glob like src/**/*.ts (skips .git, node_modules)
+- apply_patch {patch} — apply a unified diff to workspace files
 - bash {command, timeout_sec?} — run /bin/bash -lc in the workspace (default 120s, max 600s)
 - tool_schema {name} — input schema of any tool (use it before calling an mcp__ tool)
 - list_skills {query?} — find skills installed on this machine; read_skill {name} reads one
 
 Rules: paths outside the workspace are refused; edit_file fails when 'old' matches zero or
-several times; outputs are capped at ~20 KB — read or grep narrower when a result is truncated.
+several times; outputs are capped at ~8 KB per call and ~24 KB per message — read or grep
+narrower when a result is truncated.
 Reply in the language the user writes in, unless the project rules below say otherwise.
 Before changing files, read AGENTS.md or CLAUDE.md in the workspace when present and follow them.
 `;
@@ -316,6 +394,10 @@ export async function runTool(name, args, ctx) {
         return { ok: true, output: toolList(args, ctx) };
       case "grep":
         return { ok: true, output: toolGrep(args, ctx) };
+      case "glob":
+        return { ok: true, output: toolGlob(args, ctx) };
+      case "apply_patch":
+        return { ok: true, output: await toolApplyPatch(args, ctx) };
       case "bash":
         return { ok: true, output: await toolBash(args, ctx) };
       case "tool_schema":
@@ -479,6 +561,121 @@ function toolGrep(args, ctx) {
   else grepFile(abs);
   const suffix = truncated ? `\n…[stopped at ${GREP_MAX_MATCHES} matches]` : "";
   return cap(matches.length ? matches.join("\n") + suffix : "no matches");
+}
+
+const GLOB_RE_ESCAPE = /[.+^${}()|[\]\\]/g;
+
+function globToRegExp(pattern) {
+  let re = "^";
+  for (let i = 0; i < pattern.length; i++) {
+    const c = pattern[i];
+    if (c === "*") {
+      if (pattern[i + 1] === "*") {
+        i++;
+        if (pattern[i + 1] === "/") {
+          i++;
+          re += "(?:[^/]+/)*";
+        } else {
+          re += ".*";
+        }
+      } else {
+        re += "[^/]*";
+      }
+    } else if (c === "?") {
+      re += "[^/]";
+    } else if (c === "{") {
+      const close = pattern.indexOf("}", i);
+      if (close < 0) {
+        re += "\\{";
+      } else {
+        re += `(?:${pattern
+          .slice(i + 1, close)
+          .split(",")
+          .map((alt) => alt.replace(GLOB_RE_ESCAPE, "\\$&"))
+          .join("|")})`;
+        i = close;
+      }
+    } else {
+      re += c.replace(GLOB_RE_ESCAPE, "\\$&");
+    }
+  }
+  return new RegExp(`${re}$`);
+}
+
+function toolGlob(args, ctx) {
+  const pattern = args?.pattern;
+  if (typeof pattern !== "string" || !pattern) throw toolError("glob: 'pattern' must be a non-empty string");
+  const abs = resolveSessionPath(ctx.cwd, args?.path ?? ".");
+  const root = path.resolve(ctx.cwd);
+  let re;
+  try {
+    re = globToRegExp(pattern);
+  } catch (err) {
+    throw toolError(`glob: bad pattern: ${err.message}`);
+  }
+  const stat = fs.statSync(abs, { throwIfNoEntry: false });
+  if (!stat) throw toolError(`glob: no such path: ${args?.path ?? "."}`);
+  const matches = [];
+  const walk = (dir) => {
+    if (matches.length >= GLOB_MAX_LINES) return;
+    let entries;
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (matches.length >= GLOB_MAX_LINES) return;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        if (!SKIP_DIRS.has(e.name)) walk(p);
+      } else {
+        const rel = path.relative(root, p).split(path.sep).join("/");
+        if (re.test(rel)) matches.push(rel);
+      }
+    }
+  };
+  if (stat.isDirectory()) walk(abs);
+  else if (re.test(path.relative(root, abs).split(path.sep).join("/"))) matches.push(path.relative(root, abs));
+  matches.sort();
+  const suffix = matches.length >= GLOB_MAX_LINES ? `\n…[stopped at ${GLOB_MAX_LINES} files]` : "";
+  return cap(matches.length ? matches.join("\n") + suffix : "no matches");
+}
+
+const PATCH_PATH_RE = /^\+\+\+\s+(?:b\/)?(\S+)/gm;
+
+async function toolApplyPatch(args, ctx) {
+  const patch = String(args?.patch ?? "");
+  if (!patch.trim()) throw toolError("apply_patch: 'patch' must be a non-empty string");
+  const targets = [];
+  PATCH_PATH_RE.lastIndex = 0;
+  let m;
+  while ((m = PATCH_PATH_RE.exec(patch)) !== null) {
+    if (m[1] !== "/dev/null") targets.push(m[1]);
+  }
+  for (const target of targets) resolveSessionPath(ctx.cwd, target);
+  const tmp = path.join(os.tmpdir(), `muse-patch-${process.pid}-${Date.now()}.diff`);
+  await fs.promises.writeFile(tmp, patch);
+  try {
+    let isRepo = false;
+    try {
+      const probe = await execFileP("git", ["rev-parse", "--is-inside-work-tree"], { cwd: ctx.cwd });
+      isRepo = probe.stdout.trim() === "true";
+    } catch {
+      isRepo = false;
+    }
+    if (isRepo) {
+      await execFileP("git", ["apply", "--whitespace=nowarn", tmp], { cwd: ctx.cwd });
+    } else {
+      await execFileP("patch", ["-p1", "--forward", "-i", tmp], { cwd: ctx.cwd });
+    }
+  } catch (err) {
+    const out = `${err?.stdout ?? ""}${err?.stderr ?? ""}`.trim();
+    throw toolError(`apply_patch failed: ${out || err?.message || err}`);
+  } finally {
+    await fs.promises.unlink(tmp).catch(() => {});
+  }
+  return `applied patch to:\n${targets.join("\n")}`;
 }
 
 async function toolBash(args, ctx) {
