@@ -7,6 +7,8 @@ import { createStreamDecoder, decodeBody } from "./ndjson.mjs";
 const MUSE_ORIGIN = "https://muse.ai";
 const DEFAULT_WS = "wss://hatch.metaaivm.com/v1/noise";
 const APP_ID = "hatch-web";
+const CHROME_UA =
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
 
 function authError(status) {
   const err = new Error("Muse API unauthorized");
@@ -65,46 +67,183 @@ function pick(obj, ...keys) {
   return undefined;
 }
 
-export async function bootstrapHttps({ cookies, fetchImpl = globalThis.fetch } = {}) {
-  const header = cookieHeader(cookies, `${MUSE_ORIGIN}/api/hatch/token`);
+function parseJsonAt(text, start) {
+  const open = text[start];
+  if (open !== "{" && open !== "[") return null;
+  let depth = 0;
+  let inStr = false;
+  let esc = false;
+  for (let i = start; i < text.length; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{" || c === "[") depth += 1;
+    else if (c === "}" || c === "]") {
+      depth -= 1;
+      if (depth === 0) {
+        try {
+          return JSON.parse(text.slice(start, i + 1));
+        } catch {
+          return null;
+        }
+      }
+    }
+  }
+  return null;
+}
+
+function flightChunks(html) {
+  const chunks = [];
+  const re = /__next_f\.push\(\[\s*\d+\s*,\s*"((?:\\.|[^"\\])*)"/g;
+  let match;
+  while ((match = re.exec(html))) {
+    try {
+      chunks.push(JSON.parse(`"${match[1]}"`));
+    } catch {
+      chunks.push(match[1].replace(/\\"/g, '"').replace(/\\n/g, "\n"));
+    }
+  }
+  return chunks;
+}
+
+function contextFromFlightText(text) {
+  const marker = text.indexOf("ef:");
+  const start = text.indexOf("{", marker >= 0 ? marker : 0);
+  if (start < 0) return null;
+  return parseJsonAt(text, start);
+}
+
+function pickVm(ctx) {
+  const vms = ctx?.cvmMigrationInventorySnapshot?.vms;
+  if (!Array.isArray(vms) || vms.length === 0) return null;
+  const named = ctx.vmName ? vms.find((vm) => vm.vmName === ctx.vmName) : null;
+  const running = vms.find((vm) => vm.vmState === "RUNNING");
+  return named ?? running ?? vms[0];
+}
+
+/**
+ * @param {string} html
+ * @returns {{ vmId: string, vmName?: string, gatewayUrl: string, authToken: string, notaryToken?: string, backendAuthStatus?: string } | null}
+ */
+export function parseBootstrapFromHtml(html) {
+  if (!html) return null;
+  const chunks = flightChunks(html);
+  const text = chunks.length > 0 ? chunks.join("\n") : String(html).replace(/\\"/g, '"');
+  const ctx = contextFromFlightText(text);
+  if (!ctx || typeof ctx !== "object") return null;
+  const authToken = pick(ctx, "authToken", "auth_token");
+  if (!authToken) return null;
+  const vm = pickVm(ctx);
+  const vmId = vm?.vmId ?? pick(ctx, "vmId", "vm_id");
+  const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? vm?.gatewayUrl;
+  if (!vmId || !gatewayUrl) return null;
+  return {
+    vmId,
+    vmName: ctx.vmName ?? vm?.vmName,
+    gatewayUrl,
+    authToken,
+    notaryToken: pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken"),
+    backendAuthStatus: ctx.backendAuthStatus,
+  };
+}
+
+function cookieHdr(cookies) {
+  const header = cookieHeader(cookies ?? [], `${MUSE_ORIGIN}/`);
+  return header || undefined;
+}
+
+function apiHeaders(cookies) {
   const headers = {
-    Cookie: header,
     Accept: "application/json",
     "Content-Type": "application/json",
+    Origin: MUSE_ORIGIN,
+    Referer: `${MUSE_ORIGIN}/`,
+    "User-Agent": CHROME_UA,
+    "sec-fetch-site": "same-origin",
+    "sec-fetch-mode": "cors",
+    "sec-fetch-dest": "empty",
     "x-app-id": APP_ID,
   };
+  const cookie = cookieHdr(cookies);
+  if (cookie) headers.Cookie = cookie;
+  return headers;
+}
 
-  const tokenRes = await fetchImpl(`${MUSE_ORIGIN}/api/hatch/token`, { method: "POST", headers, body: "{}" });
-  const tokenJson = jsonOrThrow(tokenRes, await readJson(tokenRes));
-  const ctx = tokenJson.gatewayContext ?? tokenJson.context ?? tokenJson;
-
-  let notaryToken = pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken");
-  const notaryRes = await fetchImpl(`${MUSE_ORIGIN}/api/hatch/noise-notary-token`, {
-    method: "POST",
-    headers,
-    body: "{}",
-  });
-  if (notaryRes.status !== 401 && notaryRes.status !== 403 && notaryRes.ok) {
-    const notaryJson = await readJson(notaryRes);
-    notaryToken = pick(notaryJson, "noiseNotaryToken", "notary_token", "token") ?? notaryToken;
-  } else if (notaryRes.status === 401 || notaryRes.status === 403) {
-    throw authError(notaryRes.status);
-  }
-
-  const vmId = pick(ctx, "vmId", "vm_id") ?? pick(ctx.vmAssignment, "vmId", "vm_id");
+function assignmentFromToken(payload) {
+  const ctx = payload?.gatewayContext ?? payload?.context ?? payload;
+  const vmId = pick(ctx, "vmId", "vm_id") ?? pick(ctx?.vmAssignment, "vmId", "vm_id");
   const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? DEFAULT_WS;
   const authToken = pick(ctx, "authToken", "auth_token");
-  if (!vmId || !authToken) {
-    throw new Error("Muse bootstrap did not return a VM assignment");
+  const notaryToken = pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken");
+  if (!vmId || !authToken) return null;
+  return { vmId, gatewayUrl, authToken, notaryToken, vmName: pick(ctx, "vmName", "vm_name") };
+}
+
+async function postApi(fetchImpl, path, cookies, body) {
+  const res = await fetchImpl(`${MUSE_ORIGIN}${path}`, {
+    method: "POST",
+    headers: apiHeaders(cookies),
+    body: JSON.stringify(body),
+  });
+  if (res.status === 401 || res.status === 403) throw authError(res.status);
+  return res;
+}
+
+export async function bootstrapHttps({ cookies, fetchImpl = globalThis.fetch } = {}) {
+  const pageHeaders = {
+    Accept: "text/html,application/xhtml+xml",
+    "User-Agent": CHROME_UA,
+  };
+  const cookie = cookieHdr(cookies);
+  if (cookie) pageHeaders.Cookie = cookie;
+
+  const pageRes = await fetchImpl(`${MUSE_ORIGIN}/`, { method: "GET", headers: pageHeaders });
+  if (pageRes.status === 401 || pageRes.status === 403) throw authError(pageRes.status);
+  const html = await pageRes.text();
+  let ctx = parseBootstrapFromHtml(html);
+  if (ctx?.backendAuthStatus && ctx.backendAuthStatus !== "authenticated") {
+    throw authError(403);
   }
 
-  await fetchImpl(`${MUSE_ORIGIN}/api/hatch/vm/wake`, {
-    method: "POST",
-    headers,
-    body: JSON.stringify({ vm_id: vmId, retry_count: 0, connect_attempt_id: randomUUID() }),
-  });
+  if (!ctx?.authToken) {
+    const tokenRes = await postApi(fetchImpl, "/api/hatch/token", cookies, {});
+    ctx = assignmentFromToken(jsonOrThrow(tokenRes, await readJson(tokenRes)));
+  }
 
-  return { gatewayUrl, vmId, authToken, notaryToken };
+  if (!ctx?.vmId || !ctx?.authToken) {
+    const err = new Error("Muse bootstrap did not return a VM assignment");
+    err.status = 403;
+    throw err;
+  }
+
+  await postApi(fetchImpl, "/api/hatch/vm/wake", cookies, {
+    vm_id: ctx.vmId,
+    retry_count: 0,
+    connect_attempt_id: randomUUID(),
+  });
+  await postApi(fetchImpl, "/api/hatch/stateful-sharing", cookies, {});
+
+  return {
+    gatewayUrl: ctx.gatewayUrl ?? DEFAULT_WS,
+    vmId: ctx.vmId,
+    vmName: ctx.vmName,
+    authToken: ctx.authToken,
+    notaryToken: ctx.notaryToken,
+  };
 }
 
 function waitEvent(target, name) {

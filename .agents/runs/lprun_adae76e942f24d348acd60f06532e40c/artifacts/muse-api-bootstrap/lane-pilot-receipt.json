@@ -1,0 +1,149 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-api-bootstrap",
+  "attemptId": "lpattempt_d2ceaeefbc044a2db70deb59b22ee01c",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_9tdjgchfww",
+  "ownsPaths": [
+    "bridge/protocol/gateway.mjs",
+    "bridge/protocol/api.mjs",
+    "tests/api-client.test.mjs",
+    "tests/fixtures/**"
+  ],
+  "readFirst": [
+    {
+      "path": "bridge/protocol/gateway.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/protocol/api.mjs",
+      "windows": []
+    },
+    {
+      "path": ".agents/plans/muse-protocol.md",
+      "windows": []
+    }
+  ],
+  "output": "Bootstrap now follows the signed-in web app: `GET https://muse.ai/` for Next.js flight data, then `/api/hatch/vm/wake` with browser Origin/Referer. That is what was causing the 403 on `/api/hatch/token`.\n\nChanged paths:\n- `bridge/protocol/gateway.mjs`\n- `tests/api-client.test.mjs`\n- `tests/fixtures/muse-flight.html`\n\n`parseBootstrapFromHtml` unescapes `__next_f.push` strings, takes `authToken` / `noiseNotaryToken` / `gatewayUrl`, and picks `vmId` from the `vms` row whose `vmName` matches (else the first `RUNNING` VM). Every `https://muse.ai/api/*` call sends `Origin: https://muse.ai`, `Referer: https://muse.ai/`, a Chrome UA, and `sec-fetch-*`. Token POST remains only if the page has no context. Errors name endpoint/status only — no cookies or tokens.\n\nVerified:\n- `node /tmp/muse-boot-check/check.mjs` → `bootstrap check ok`\n- `node --test tests/api-client.test.mjs tests/cookies.test.mjs tests/acp.test.mjs` → 13 passed\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/protocol/gateway.mjs:142-161\",\"bridge/protocol/gateway.mjs:169-183\",\"bridge/protocol/gateway.mjs:206-246\",\"cmd:node /tmp/muse-boot-check/check.mjs\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/api-client.test.mjs:64-71\",\"tests/api-client.test.mjs:73-99\",\"tests/fixtures/muse-flight.html\",\"cmd:node --test tests/api-client.test.mjs tests/cookies.test.mjs tests/acp.test.mjs\"]}\n]\n```\n\nAPPROACH: Read the VM assignment from the same escaped flight payload the site embeds, and put Origin/Referer on hatch `/api/` calls so CSRF no longer returns 403.\n\nLESSON: Muse’s load path never uses `/api/hatch/token`; a token-only bootstrap with Cookie-only headers is the 403, not a missing cookie.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-boot-check/check.mjs",
+      "exitCode": 0,
+      "stdout": "bootstrap check ok\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "18074203f0701267dcc59711586f86c5e74236301c4f61a4903ed96f6e434a23",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_4133c297363147eaa8686e0d47f44c6d/muse-ai-connector",
+      "revision": {
+        "head": "67e3734d2d12b5fc08e2f8b4b90dfdfc0fbc63a2",
+        "dirty": 3
+      }
+    },
+    {
+      "command": "node --test tests/api-client.test.mjs tests/cookies.test.mjs tests/acp.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ fake initialize, session/new, session/prompt streams PONG and ends the turn (62.546167ms)\r\n✔ session/new advertises muse-spark and session/set_model accepts it (53.905292ms)\r\n✔ a second prompt in the same session reuses accountId and Muse chat id from sessions.json (57.73575ms)\r\n✔ buildGatewayUrl sets vm_id, auth_token, app_id, request_id and optional notary_token (0.922708ms)\r\n✔ chatStreamBody includes message, session, node and delta_stream (0.092583ms)\r\n✔ resolveTransport defaults to api and switches on flag or MUSE_TRANSPORT (0.054875ms)\r\n✔ parseBootstrapFromHtml reads vm context from escaped Next flight HTML (0.250208ms)\r\n✔ bootstrapHttps uses the page flight context and sends Origin/Referer on /api/ calls (17.592041ms)\r\n✔ openTransport browser calls the fake browser driver and not the gateway (0.101667ms)\r\n✔ createMuseClient send streams deltas through envelope frames and returns chat text (12.723084ms)\r\n✔ saveCookies writes 0600 file in a 0700 account directory (1.985291ms)\r\n✔ cookieHeader includes a matching cookie and drops expired, foreign, or http-only-secure mismatches (0.226041ms)\r\n✔ loadCookies throws missing_cookies when the file is absent (0.229333ms)\r\nℹ tests 13\r\nℹ suites 0\r\nℹ pass 13\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 249.791667\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "5980957ba70cfdf011435960314fda780fdbcce5bc7624f9bb86417eb6305876",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_4133c297363147eaa8686e0d47f44c6d/muse-ai-connector",
+      "revision": {
+        "head": "67e3734d2d12b5fc08e2f8b4b90dfdfc0fbc63a2",
+        "dirty": 3
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "50279f79145f3e15cea56d52efe0da7a92479fc47842b5d551360911ba0552f8",
+      "sentPlanSha256": null,
+      "sourceLength": 4466,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-cursor",
+      "model": "grok-4.6",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_d2ceaeefbc044a2db70deb59b22ee01c",
+      "threadId": "thr_9tdjgchfww",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "acp-cursor",
+        "model": "grok-4.6",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- When a Muse chat the connector drives shows an approval card, answer it «Always allow» (never Deny, never one-time Allow); only cards about money (purchase, payment, subscription) go to the owner.",
+        "rulesPicked": {
+          "total": 15,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_fd97fb910fa54786"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- .agents/plans/muse-protocol.md L1-L99 (sha256 130d289d)\n- .agents/plans/muse-nodes.md L1-L33 (sha256 164777e6)\n- bridge/session.mjs L1-L264 (sha256 166f9831)\n- bridge/accounts.mjs L1-L268 (sha256 5a0aba49)",
+        "executionPacketSha256": "bc8c9337781a542afbeb4b74f7e73fc5e27ddc4db82811ae5ec5864060d934ac",
+        "pmReadContext": "{\"summary\":\"This packet outlines the plan and existing code for task muse-api-client.2 ('Muse direct API client on stored cookies, CLI/ACP transport switch'). The primary objective is to enable musebridge and the Muse provider to communicate directly with the user's Muse virtual machine using stored cookies, restricting Chrome usage exclusively to initial sign-in and fallback transport.\\n\\nKey architecture and protocol details from .agents/plans/muse-protocol.md:\\n1. Protocol Stack: Communication transitions through multiple layers: stored account cookies -> HTTPS bootstrap (/api/hatch/*) to acquire gateway context -> WebSocket connection (wss://hatch.metaaivm.com/v1/noise) -> Noise_XX_25519_AESGCM_SHA256 handshake and transport cipher -> Protobuf Frame multiplexing HTTP requests/responses -> zstd-compressed JSON and ndjson payloads.\\n2. HTTPS Bootstrap & Gateway URL: Bootstrap requests (e.g., /api/hatch/vm/wake, /api/hatch/token) retrieve gatewayUrl, vmId, vmName, authToken (an EdDSA JWT, strictly forbidden from logs), and notary tokens. The WebSocket URL is populated with query parameters vm_id, auth_token, app_id ('hatch-web'), request_id (UUID), and notary_token.\\n3. Encryption & Framing: Noise_XX_25519_AESGCM_SHA256 uses X25519 keys generated per connection and AES-GCM-256 for transport. Encrypted payloads encapsulate Protobuf Frames containing HTTP requests (stream_id, method, path_with_query, headers, body, end) and responses (stream_id, Head, Data chunks). Responses are compressed with zstd; ndjson event streams must be decompressed as a single continuous zstd stream.\\n4. VM HTTP API Operations: Direct calls include POST /api/ping (liveness), POST /api/nodes/register, GET /api/session/list, POST /chat/stream (sends user message with session_id, node_id, capabilities), POST /chat/subscribe (streams ndjson events including agent.status, task.status, model_lock.updated, text deltas), and GET /chat/history.\\n\\nCurrent Implementation & Existing Components:\\n1. Playwright Browser Automation (bridge/session.mjs): Currently drives a persistent Chromium context per account. It detects readiness via DOM selectors, enters text into the composer, and polls IndexedDB ('hatch-chat-cache', tables 'side-chat-lists' and 'side-transcripts') alongside body text ('is working') to extract responses.\\n2. Account & Lock Management (bridge/accounts.mjs): Maintains account registry in ~/.muse-bridge/accounts.json and manages file-based process locks in ~/.muse-bridge/locks/<id>.lock (stale after 30 minutes). Provides routines to list, add, remove, touch, and pick accounts based on status and recency of use.\\n3. CLI Entrypoint (bin/musebridge.mjs): Provides CLI commands (doctor, chats, history) using accounts and session modules.\\n\\nScope and Deliverables:\\n1. Required interfaces: bridge/cookies.mjs (cookie file persistence with mode 0600 in 0700 directory, cookie header builder), bridge/protocol/gateway.mjs (gateway URL builder, gateway connection), bridge/protocol/api.mjs (chatStreamBody, resolveTransport defaulting to 'api' with 'browser' override via flag or MUSE_TRANSPORT, createMuseClient).\\n2. Out of scope: Exposing BB tools as Muse node commands (.agents/plans/muse-nodes.md), Settings UI modifications, and DeepSWE benchmarks.\\n3. Invariants & Verification: Cookie and token values must never be logged or leaked. Verification requires passing /tmp/muse-api-check/check.mjs, unit test suites (tests/api-client.test.mjs, tests/cookies.test.mjs), and existing test suites (tests/acp.test.mjs, tests/accounts.test.mjs, tests/acp-cancel.test.mjs).\",\"keyFacts\":[\".agents/plans/muse-protocol.md: The direct client wire protocol uses HTTPS bootstrap over cookies, a WebSocket tunnel to hatch.metaaivm.com, a Noise_XX_25519_AESGCM_SHA256 encrypted session, and Protobuf framing.\",\".agents/plans/muse-protocol.md: HTTPS bootstrap provides gateway context including gatewayUrl, vmName, vmId, authToken, noiseNotaryToken, backendAuthStatus, and vmAssignment.\",\".agents/plans/muse-protocol.md: The gateway WebSocket URL sets query parameters vm_id, auth_token, app_id ('hatch-web'), request_id, and optionally notary_token.\",\".agents/plans/muse-protocol.md: The auth_token format is 's0:<JWT EdDSA>' and must never be logged.\",\".agents/plans/muse-protocol.md: The multiplexing protocol uses a Protobuf Frame with field 1 (random uint64 id), field 2 (uint64 0), field 3 (uint64 1), and field 4 (Body containing Request or Response).\",\".agents/plans/muse-protocol.md: HTTP request frames carry method, path_with_query, headers, body bytes, and end flag; responses send a Head frame followed by Data chunk frames.\",\".agents/plans/muse-protocol.md: Response bodies use zstd compression (Accept-Encoding: zstd); streamed ndjson responses form a single zstd stream across Data chunks handled by zlib.createZstdDecompress().\",\".agents/plans/muse-protocol.md: Sending a chat message uses POST /chat/stream with message text, node_id, session_id UUID, capabilities list, timezone, and metadata.\",\".agents/plans/muse-protocol.md: Chat event streams arrive via POST /chat/subscribe, emitting events such as model_lock.updated, agent.status, task.status, and text deltas.\",\".agents/plans/muse-protocol.md: The robust v1 send flow calls POST /chat/stream, follows POST /chat/subscribe until task.status leaves 'running' and agent.status stops 'working', then fetches final text from GET /chat/history.\",\".agents/plans/muse-protocol.md: Account cookies must be stored at ~/.muse-bridge/accounts/<id>/cookies.json with mode 0600.\",\".agents/plans/muse-nodes.md: Node registration is handled by POST /api/nodes/register with node_id, display_name, platform, and commands_v2.\",\".agents/plans/muse-nodes.md: The web client only registers a ping command for connection liveness in commands_v2.\",\"TASK CONTRACT: Exposing BB tools as Muse node commands is explicitly marked as out of scope.\",\"TASK CONTRACT: The objective requires musebridge and the Muse provider to communicate directly with Muse using stored cookies, reserving Chrome for sign-in and fallback.\",\"TASK CONTRACT: Cookie and token values must never reach logs, stdout, errors, reports, or git.\",\"TASK CONTRACT: cookies.json must have mode 0600 inside a mode 0700 directory.\",\"TASK CONTRACT: Required module interfaces include bridge/cookies.mjs, bridge/protocol/gateway.mjs, and bridge/protocol/api.mjs.\",\"TASK CONTRACT: Transport resolution must default to 'api', switching to 'browser' if specified by flag or the MUSE_TRANSPORT environment variable.\",\"TASK CONTRACT: Verification commands are 'node /tmp/muse-api-check/check.mjs' and 'node --test tests/api-client.test.mjs tests/cookies.test.mjs tests/acp.test.mjs tests/accounts.test.mjs tests/acp-cancel.test.mjs'.\",\"bridge/session.mjs: The current browser session uses Playwright's chromium.launchPersistentContext with account profile directories.\",\"bridge/session.mjs: Browser session completion detection reads IndexedDB 'hatch-chat-cache' object stores 'side-transcripts' and 'side-chat-lists'.\",\"bridge/session.mjs: Browser session detects busy states by checking if page text contains 'is working'.\",\"bridge/accounts.mjs: Account registry is stored at ~/.muse-bridge/accounts.json with fields id, label, profileDir, status, createdAt, lastUsedAt, and lastCheckedAt.\",\"bridge/accounts.mjs: Concurrency locking uses ~/.muse-bridge/locks/<id>.lock containing pid, owner, and timestamp at.\",\"bridge/accounts.mjs: Locks are deemed stale if the PID is not alive or if older than 30 minutes (30 * 60 * 1000 ms).\",\"bridge/accounts.mjs: pickAccount selects from signed_in or unknown accounts without active locks, sorting by least recent lastUsedAt.\",\"bin/musebridge.mjs: The CLI exports commands doctor, chats, and history, interfacing with bridge/accounts.mjs and bridge/session.mjs.\"],\"openQuestions\":[\".agents/plans/muse-protocol.md does not settle the exact binary framing for Noise handshake messages over WebSocket (e.g. length prefix vs. one message per WebSocket binary frame).\",\".agents/plans/muse-protocol.md notes uncertainty on whether a prologue is required during the Noise handshake initialization.\",\".agents/plans/muse-protocol.md notes that the exact payload structure sent by the client in Noise handshake message 3 (auth/attestation) remains to be read from web bundles.\",\".agents/plans/muse-protocol.md notes that the exact event name and JSON schema for text delta events within /chat/subscribe were not yet decoded from capture streams.\",\".agents/plans/muse-protocol.md leaves open whether server Ed25519 signature verification against notary_token must be strictly enforced or can initially log warnings.\",\"The excerpts do not settle how cookies are initially exported or refreshed from the Playwright browser session into cookies.json during sign-in.\",\"The full CLI argument parsing and implementation in bin/musebridge.mjs is truncated and does not show how --transport or accounts refresh are wired.\",\"The file bin/muse-acp.mjs listed in read_first is not present in the excerpts, leaving its interaction with resolveTransport and createMuseClient unsettled.\",\"The exact parameter names and expectations in the external verification script /tmp/muse-api-check/check.mjs are not provided in the excerpts.\",\".agents/plans/muse-protocol.md does not settle connection retry, re-authentication, or Noise rekeying behaviors during long-lived WebSocket sessions.\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 13208,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "acp-cursor/grok-4.6",
+        "harness": {
+          "id": "hrn_6eb238a3e754c8e4",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "warnings": [
+    "the writer changed tests that existed before the attempt (reference tests): tests/api-client.test.mjs — the code critic reviews them in gate mode"
+  ],
+  "turns": 1
+}
