@@ -145,10 +145,10 @@ musebridge chats [--account <id>] [--transport api|browser] [--json]
                                             # list side chats
 musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
                                             # show a chat transcript
-musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
-                                            # send a message and print the reply
-musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
-                                            # first call returns chatId; pass --chat <id> to keep editing in the same chat
+musebridge send [--account <id>] [--chat <id>] [--attach <path>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
+                                            # send a message (and optional pictures/files) and print the reply
+musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--attach <path>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
+                                            # first call returns chatId; pass --chat <id> to keep editing in the same chat; --attach sends a photo or file
 musebridge approve [--account <id>] --chat <id>
                                             # answer pending approval cards (Always allow;
                                             # cards about money are left to you)
@@ -387,10 +387,10 @@ musebridge chats [--account <id>] [--transport api|browser] [--json]
                                             # список боковых чатов
 musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
                                             # транскрипт чата
-musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
-                                            # отправить сообщение и напечатать ответ
-musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
-                                            # первый вызов возвращает chatId; --chat <id> продолжает правки в том же чате
+musebridge send [--account <id>] [--chat <id>] [--attach <path>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
+                                            # отправить сообщение (и при необходимости фото/файл) и напечатать ответ
+musebridge image [--account <id>] [--format W:H] [--out dir] [--chat <id>] [--attach <path>] [--timeout <sec>] [--transport api|browser] [--json] <prompt>
+                                            # первый вызов возвращает chatId; --chat <id> продолжает правки; --attach отправляет фото или файл
 musebridge approve [--account <id>] --chat <id>
                                             # ответить на карточки одобрения («Всегда разрешать»;
                                             # карточки про деньги остаются вам)

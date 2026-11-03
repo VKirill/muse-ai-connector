@@ -46,17 +46,20 @@ function loadOrCreateNodeId(accountId) {
 }
 
 /**
- * @param {{ text: string, sessionId: string, nodeId: string, timezone?: string }} opts
+ * @param {{ text: string, sessionId: string, nodeId: string, timezone?: string, attachments?: object[] }} opts
  */
-export function chatStreamBody({ text, sessionId, nodeId, timezone }) {
-  return {
-    message: text,
+export function chatStreamBody({ text, sessionId, nodeId, timezone, attachments } = {}) {
+  const base = {
     node_id: nodeId,
     capabilities: CAPABILITIES,
     session_id: sessionId,
     timezone: timezone ?? "UTC",
     metadata: { thread_is_dictation_used: false },
   };
+  if (Array.isArray(attachments) && attachments.length) {
+    return { ...base, items: [...attachments, { type: "text", text }] };
+  }
+  return { ...base, message: text };
 }
 
 /**
@@ -202,7 +205,7 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
     return res.bytes();
   }
 
-  async function send({ chatId, text, onDelta, onChatId, timeoutMs = 180_000, isCancelled } = {}) {
+  async function send({ chatId, text, attachments, onDelta, onChatId, timeoutMs = 180_000, isCancelled } = {}) {
     const sessionId = chatId ?? randomUUID();
     let startSeq = 0;
     if (chatId) {
@@ -217,7 +220,7 @@ export async function createMuseClient({ accountId, gateway, connect = connectGa
     const opened = await gw.request({
       method: "POST",
       path: "/chat/stream",
-      body: chatStreamBody({ text, sessionId, nodeId, timezone }),
+      body: chatStreamBody({ text, sessionId, nodeId, timezone, attachments }),
     });
     const openedJson = (await opened.json()) ?? {};
     const resolvedChatId = openedJson.session_id ?? sessionId;
