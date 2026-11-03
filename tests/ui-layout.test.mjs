@@ -138,11 +138,11 @@ test("i18n en and ru dictionaries have the same key set", () => {
   assert.deepEqual([...enKeys].sort(), [...ruKeys].sort());
 });
 
-test("version 0.3.11 in package.json, package-lock.json and version.ts", () => {
+test("version 0.3.12 in package.json, package-lock.json and version.ts", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
-  assert.equal(pkg.version, "0.3.11");
-  assert.equal(lock.version, "0.3.11");
-  assert.equal(lock.packages[""].version, "0.3.11");
-  assert.equal(PLUGIN_VERSION, "0.3.11");
+  assert.equal(pkg.version, "0.3.12");
+  assert.equal(lock.version, "0.3.12");
+  assert.equal(lock.packages[""].version, "0.3.12");
+  assert.equal(PLUGIN_VERSION, "0.3.12");
 });

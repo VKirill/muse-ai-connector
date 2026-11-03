@@ -246,12 +246,15 @@ test("the loop stops at MUSE_MAX_TOOL_ROUNDS with a message", async () => {
   }
 });
 
-test("a block-less reply gets one nudge; the second block-less reply ends the turn", async () => {
+test("block-less replies get three nudges naming the cloud VM; the fourth ends with the stop line", async () => {
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
   const sent = path.join(home, "sent.jsonl");
-  fs.writeFileSync(script, JSON.stringify(["Читаю math.js.", "final words without a marker"]));
+  fs.writeFileSync(
+    script,
+    JSON.stringify(["Читаю math.js.", "still thinking", "one more try", "final words without a marker"]),
+  );
   const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
   try {
     await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
@@ -263,16 +266,19 @@ test("a block-less reply gets one nudge; the second block-less reply ends the tu
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l).text);
-    assert.equal(sentLines.length, 2);
-    assert.match(sentLines[1], /no \[\[done\]\] line/);
-    assert.equal(chunkText(agent.updates), "final words without a marker");
-    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.");
+    assert.equal(sentLines.length, 4);
+    for (const nudge of sentLines.slice(1)) assert.match(nudge, /cloud VM/);
+    assert.equal(chunkText(agent.updates), "Muse stopped without using a tool; nothing reached the workspace.");
+    assert.equal(
+      chunkText(agent.updates, "agent_thought_chunk"),
+      "Читаю math.js.still thinkingone more tryfinal words without a marker",
+    );
   } finally {
     agent.close();
   }
 });
 
-test("a nudge leads to a tool call, then [[done]] ends the turn and is stripped", async () => {
+test("two block-less replies then a tool block still continues the turn", async () => {
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
@@ -281,6 +287,7 @@ test("a nudge leads to a tool call, then [[done]] ends the turn and is stripped"
     script,
     JSON.stringify([
       "Читаю math.js.",
+      "Still checking.",
       `Writing the file.\n${block({ tool: "write_file", args: { path: "hello.txt", content: "hi from muse\n" } })}`,
       "All done: hi from muse\n[[done]]",
     ]),
@@ -297,11 +304,12 @@ test("a nudge leads to a tool call, then [[done]] ends the turn and is stripped"
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l).text);
-    assert.equal(sentLines.length, 3);
-    assert.match(sentLines[1], /no \[\[done\]\] line/);
-    assert.match(sentLines[2], /^TOOL RESULT 1\/1 write_file \(ok\):/);
+    assert.equal(sentLines.length, 4);
+    assert.match(sentLines[1], /cloud VM/);
+    assert.match(sentLines[2], /cloud VM/);
+    assert.match(sentLines[3], /^TOOL RESULT 1\/1 write_file \(ok\):/);
     assert.equal(chunkText(agent.updates), "All done: hi from muse");
-    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.Writing the file.");
+    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.Still checking.Writing the file.");
   } finally {
     agent.close();
   }
@@ -382,7 +390,7 @@ test("a [[done]] in mid-text is not a marker and gets the nudge", async () => {
       .split("\n")
       .map((l) => JSON.parse(l).text);
     assert.equal(sentLines.length, 2);
-    assert.match(sentLines[1], /no \[\[done\]\] line/);
+    assert.match(sentLines[1], /cloud VM/);
     assert.equal(chunkText(agent.updates), "real end");
     assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "working on it [[done]] moving on");
   } finally {

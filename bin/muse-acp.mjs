@@ -21,9 +21,10 @@ const HEADLESS = process.env.MUSE_HEADLESS !== "0" && process.env.MUSE_HEADLESS 
 const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC || 180)) * 1000;
 const PENDING_WAIT_MS = Math.max(0, Number(process.env.MUSE_PENDING_WAIT_MS || 30_000));
 const MAX_TOOL_ROUNDS = Math.max(1, Number(process.env.MUSE_MAX_TOOL_ROUNDS || 60));
-const MAX_BLOCKLESS_REPLIES = 2;
+const MAX_BLOCKLESS_REPLIES = 3;
 const NUDGE_MESSAGE =
-  "Your last reply had no muse-tool block and no [[done]] line. If you meant to use a tool, send the block now; if you are finished, repeat your final answer ending with [[done]].";
+  "Your last reply had no ```muse-tool block. Your own tools (muse.exec, muse.read, …) run on your cloud VM, which cannot see this workspace — nothing happened. To act, end your reply with ```muse-tool blocks (up to 8). If you are finished, repeat your final answer ending with [[done]].";
+const BLOCKLESS_STOP_MESSAGE = "Muse stopped without using a tool; nothing reached the workspace.";
 const CLIENT_REQUEST_TIMEOUT_MS = 60_000;
 const DUMP_PROMPT_FILE = process.env.MUSE_ACP_DUMP_PROMPT || "";
 const MUSE_MODEL_ID = "muse-spark";
@@ -140,7 +141,7 @@ function fakeNextReply() {
     fakeScriptIdx++;
     return reply;
   }
-  return "PONG";
+  return "PONG\n[[done]]";
 }
 
 function dumpSent(text) {
@@ -477,7 +478,7 @@ async function runPrompt(session, params) {
             const done = stripDoneMarker(parsed.text);
             if (done === null) {
               blockless += 1;
-              if (blockless < MAX_BLOCKLESS_REPLIES) {
+              if (blockless <= MAX_BLOCKLESS_REPLIES) {
                 update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: parsed.text } });
                 rounds += 1;
                 if (rounds >= MAX_TOOL_ROUNDS) {
@@ -490,10 +491,12 @@ async function runPrompt(session, params) {
                 toSend = NUDGE_MESSAGE;
                 continue;
               }
+              update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: parsed.text } });
+              update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: BLOCKLESS_STOP_MESSAGE } });
+              return { stopReason: "end_turn" };
             }
-            const final = done ?? parsed.text;
-            streamed += final;
-            update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: final } });
+            streamed += done;
+            update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: done } });
             return { stopReason: "end_turn" };
           }
           blockless = 0;
