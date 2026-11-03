@@ -153,9 +153,9 @@ export async function openSession({ accountId = "default", headless = true } = {
   }
 
   /**
-   * @param {{ chatId?: string, text: string, onDelta?: (suffix: string) => void, timeoutMs?: number, isCancelled?: () => boolean }} input
+   * @param {{ chatId?: string, text: string, onDelta?: (suffix: string) => void, onChatId?: (chatId: string) => void, timeoutMs?: number, isCancelled?: () => boolean }} input
    */
-  async function send({ chatId, text, onDelta, timeoutMs = 180_000, isCancelled }) {
+  async function send({ chatId, text, onDelta, onChatId, timeoutMs = 180_000, isCancelled }) {
     const target = chatId ? `${MUSE_ORIGIN}/thread/${chatId}` : `${MUSE_ORIGIN}/thread/new`;
     await page.goto(target, { waitUntil: "domcontentloaded" });
     const box = page.locator(COMPOSER_SELECTOR);
@@ -178,7 +178,10 @@ export async function openSession({ accountId = "default", headless = true } = {
       }
       if (!resolvedChatId) {
         const match = page.url().match(/\/thread\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-        if (match) resolvedChatId = match[1];
+        if (match) {
+          resolvedChatId = match[1];
+          onChatId?.(resolvedChatId);
+        }
       }
       const busy = await pageIsBusy(page);
       let messages = [];
