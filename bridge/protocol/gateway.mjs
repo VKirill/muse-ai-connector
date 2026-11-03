@@ -120,11 +120,63 @@ function flightChunks(html) {
   return chunks;
 }
 
+function openingBraceBefore(text, pos) {
+  const stack = [];
+  let inStr = false;
+  let esc = false;
+  for (let i = 0; i < pos; i++) {
+    const c = text[i];
+    if (inStr) {
+      if (esc) {
+        esc = false;
+        continue;
+      }
+      if (c === "\\") {
+        esc = true;
+        continue;
+      }
+      if (c === '"') inStr = false;
+      continue;
+    }
+    if (c === '"') {
+      inStr = true;
+      continue;
+    }
+    if (c === "{" || c === "[") stack.push({ i, c });
+    else if ((c === "}" || c === "]") && stack.length) stack.pop();
+  }
+  for (let j = stack.length - 1; j >= 0; j--) {
+    if (stack[j].c === "{") return stack[j].i;
+  }
+  return -1;
+}
+
+function objectsContaining(text, needle) {
+  const found = [];
+  const seen = new Set();
+  let from = 0;
+  while (from < text.length) {
+    const at = text.indexOf(needle, from);
+    if (at < 0) break;
+    const start = openingBraceBefore(text, at);
+    from = at + needle.length;
+    if (start < 0 || seen.has(start)) continue;
+    seen.add(start);
+    const obj = parseJsonAt(text, start);
+    if (obj && typeof obj === "object" && !Array.isArray(obj)) found.push(obj);
+  }
+  return found;
+}
+
 function contextFromFlightText(text) {
-  const marker = text.indexOf("ef:");
-  const start = text.indexOf("{", marker >= 0 ? marker : 0);
-  if (start < 0) return null;
-  return parseJsonAt(text, start);
+  const candidates = [
+    ...objectsContaining(text, '"authToken"'),
+    ...objectsContaining(text, '"auth_token"'),
+    ...objectsContaining(text, '"cvmMigrationInventorySnapshot"'),
+  ];
+  const withAuth = candidates.filter((obj) => pick(obj, "authToken", "auth_token"));
+  const withBoth = withAuth.filter((obj) => pick(obj, "gatewayUrl", "gateway_url"));
+  return withBoth[0] ?? withAuth[0] ?? null;
 }
 
 function pickVm(ctx) {

@@ -70,6 +70,22 @@ test("parseBootstrapFromHtml reads vm context from escaped Next flight HTML", ()
   assert.equal(parsed.notaryToken, "nt-1");
 });
 
+test("parseBootstrapFromHtml finds gateway context by content when the row is not labelled ef:", () => {
+  const ctxRow =
+    '7c:{\\"cvmMigrationInventory\\":null,\\"cvmMigrationInventorySnapshot\\":{\\"observedAtMs\\":1,\\"vms\\":[{\\"vmId\\":\\"vm-9\\",\\"vmName\\":\\"n9\\",\\"gatewayUrl\\":\\"wss://gw9/\\",\\"vmState\\":\\"RUNNING\\"}]},\\"vmSelection\\":{\\"revision\\":5,\\"override\\":null},\\"gatewayUrl\\":\\"wss://gw9/\\",\\"vmName\\":\\"n9\\",\\"authToken\\":\\"s0:t9\\",\\"noiseNotaryToken\\":\\"nt9\\",\\"backendAuthStatus\\":\\"authenticated\\"}\\n';
+  const html =
+    '<link rel="preconnect" href="https://hatch.metaaivm.com"/>' +
+    '<script>self.__next_f.push([1,"0:{\\"P\\":null,\\"b\\":\\"x\\"}\\n2:[\\"$\\",\\"link\\",null,{\\"href\\":\\"/a.css\\"}]\\nef:[\\"$\\",\\"div\\",null,{}]\\n"])</script>' +
+    '<script>self.__next_f.push([1,"' +
+    ctxRow +
+    '"])</script>';
+  const parsed = parseBootstrapFromHtml(html);
+  assert.equal(parsed.vmId, "vm-9");
+  assert.equal(parsed.gatewayUrl, "wss://gw9/");
+  assert.equal(parsed.authToken, "s0:t9");
+  assert.equal(parsed.notaryToken, "nt9");
+});
+
 test("bootstrapHttps uses the page flight context and sends Origin/Referer on /api/ calls", async () => {
   const seen = [];
   const fakeFetch = async (url, opts = {}) => {
