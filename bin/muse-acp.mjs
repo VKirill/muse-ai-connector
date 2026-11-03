@@ -24,7 +24,34 @@ const MAX_TOOL_ROUNDS = Math.max(1, Number(process.env.MUSE_MAX_TOOL_ROUNDS || 6
 const MAX_BLOCKLESS_REPLIES = 3;
 const NUDGE_MESSAGE =
   "Your last reply had no ```muse-tool block. muse-tool is not one of your tools — it is a fenced text block you write at the end of your reply; the BB bridge on the user's machine runs it and answers in the next message. Your own tools (muse.exec, muse.read, …) run on your cloud VM, which cannot see this workspace — nothing happened, and web results from your browser.* tools reach the user only through a muse-tool write_file block. To act, end your reply with ```muse-tool blocks (up to 8). If you are finished, repeat your final answer ending with [[done]].";
-const BLOCKLESS_STOP_MESSAGE = "Muse stopped without using a tool; nothing reached the workspace.";
+const BLOCKLESS_STOP_MESSAGE = "RetriableError: [muse_no_tool] Muse stopped without using a tool";
+const RETRY_DELAYS_MS = (process.env.MUSE_RETRY_DELAYS_MS ?? "10000,30000,60000")
+  .split(",")
+  .map((v) => Math.max(0, Number(v) || 0));
+
+function isAuthError(err) {
+  return err?.code === "auth_failed" || err?.code === "missing_cookies" || err?.code === "no_signed_in_account" || err?.status === 401 || err?.status === 403;
+}
+
+function shortCause(err) {
+  let m = String(err?.message || err);
+  if (/Unexpected token|not valid JSON/i.test(m)) m = `non-JSON response from Muse${err?.status ? ` (HTTP ${err.status})` : ""}`;
+  else if (err?.status) m = `HTTP ${err.status}: ${m}`;
+  return m.slice(0, 150);
+}
+
+/** Retries driver.send on transport/service faults (5xx, non-JSON, socket, timeout). */
+async function sendWithRetry(session, driver, params) {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await driver.send(params);
+    } catch (err) {
+      if (err?.code === "cancelled" || isAuthError(err) || attempt >= RETRY_DELAYS_MS.length) throw err;
+      await sleep(RETRY_DELAYS_MS[attempt]);
+      if (session.cancelled) throw codedError("cancelled", "cancelled");
+    }
+  }
+}
 const EMPTY_REPLY_POLL_MS = 3_000;
 const WORKING_THOUGHT_MESSAGE = "Muse is working with its own tools…";
 const STILL_WORKING_MESSAGE = "Muse is still working on its side; ask it to continue";
@@ -105,20 +132,6 @@ function codedError(code, message) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-function errorMessage(err) {
-  const code = err?.code;
-  if (code === "no_free_account") return "All Muse accounts are busy. Try again in a moment.";
-  if (code === "no_signed_in_account") return "No signed-in Muse account. Open BB Settings → Plugins → Muse and sign in.";
-  if (code === "reply_timeout") return "Muse did not finish a reply in time.";
-  return String(err?.message || err);
-}
-
-function signedOutMessage(accountId) {
-  const account = listAccounts().find((a) => a.id === accountId);
-  const label = account?.label ?? accountId;
-  return `Muse account ${label} is signed out: open BB Settings → Plugins → Muse and sign in again`;
 }
 
 const fakeChats = new Map();
@@ -208,6 +221,11 @@ async function openFakeSession() {
       const turn = fakeNextReply();
       const parts = Array.isArray(turn) ? turn : [turn];
       const replyText = parts[0] ?? "";
+      if (replyText.startsWith("@@error ")) {
+        const err = new Error(replyText.slice(8));
+        err.code = "service_error";
+        throw err;
+      }
       const reply = { id: `fake-assistant-${++fakeSeq}`, role: "assistant", content: replyText, streaming: false };
       if (isCancelled?.()) {
         landFakeReply(messages, reply);
@@ -350,7 +368,7 @@ async function runImageTurn(session, driver, text, attachments) {
   const toSend =
     !session.museChatId || parsed.format ? imagePrompt(parsed.text, parsed.format || undefined) : text;
   dumpSent(toSend);
-  const result = await driver.send({
+  const result = await sendWithRetry(session, driver, {
     chatId: session.museChatId || undefined,
     text: toSend,
     attachments,
@@ -434,7 +452,7 @@ async function runPrompt(session, params) {
         const signedIn = await driver.isSignedIn();
         if (!signedIn) {
           if (knownAccount) setStatus(session.accountId, "signed_out");
-          update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: signedOutMessage(session.accountId) } });
+          update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `NonRetriableError: muse signed out: ${session.accountId}` } });
           return { stopReason: "end_turn" };
         }
         if (knownAccount) setStatus(session.accountId, "signed_in");
@@ -469,7 +487,7 @@ async function runPrompt(session, params) {
           if (session.cancelled) return { stopReason: "cancelled" };
           sendInFlight = true;
           dumpSent(toSend);
-          const result = await driver.send({
+          const result = await sendWithRetry(session, driver, {
             chatId: session.museChatId || undefined,
             text: toSend,
             attachments: rounds === 0 ? attachments : undefined,
@@ -588,7 +606,10 @@ async function runPrompt(session, params) {
       }
       return { stopReason: "cancelled" };
     }
-    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: errorMessage(err) } });
+    const faultText = isAuthError(err)
+      ? `NonRetriableError: muse signed out: ${session.accountId}`
+      : `RetriableError: [muse_unavailable] ${shortCause(err)}`;
+    update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: faultText } });
     return { stopReason: "end_turn" };
   }
 }

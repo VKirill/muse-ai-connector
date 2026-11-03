@@ -268,7 +268,7 @@ test("block-less replies get three nudges naming the cloud VM; the fourth ends w
       .map((l) => JSON.parse(l).text);
     assert.equal(sentLines.length, 4);
     for (const nudge of sentLines.slice(1)) assert.match(nudge, /cloud VM/);
-    assert.equal(chunkText(agent.updates), "Muse stopped without using a tool; nothing reached the workspace.");
+    assert.equal(chunkText(agent.updates), "RetriableError: [muse_no_tool] Muse stopped without using a tool");
     assert.equal(
       chunkText(agent.updates, "agent_thought_chunk"),
       "Читаю math.js.still thinkingone more tryfinal words without a marker",
@@ -517,4 +517,75 @@ test("output cap: 50 KB becomes <= 8 KB with a cut line", async () => {
   assert.match(out, /… \d+ bytes cut …/);
   assert.ok(out.startsWith("x".repeat(100)));
   assert.ok(out.endsWith("x".repeat(100)));
+});
+
+test("two 503s then a normal reply: the same chat is retried and the turn continues", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(script, JSON.stringify(["@@error HTTP 503", "@@error HTTP 503", "ok after retry\n[[done]]"]));
+  const agent = newSession(home, ws, {
+    MUSE_BRIDGE_FAKE_SCRIPT: script,
+    MUSE_BRIDGE_FAKE_SENT: sent,
+    MUSE_RETRY_DELAYS_MS: "1,1,1",
+  });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const sentLines = fs.readFileSync(sent, "utf8").trim().split("\n").map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 3);
+    assert.equal(sentLines[0], sentLines[1]);
+    assert.equal(sentLines[1], sentLines[2]);
+    assert.equal(chunkText(agent.updates), "ok after retry");
+  } finally {
+    agent.close();
+  }
+});
+
+test("persistent 503 ends the turn with a RetriableError answer Lane Pilot can catch", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  fs.writeFileSync(
+    script,
+    JSON.stringify(["@@error HTTP 503 service unavailable", "@@error HTTP 503 service unavailable"]),
+  );
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_RETRY_DELAYS_MS: "1" });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const answer = chunkText(agent.updates);
+    assert.match(answer, /^(?:Error:\s*)?(?:RetriableError:\s*\[[a-z_]+\]|NonRetriableError:\s*\S)/i);
+    assert.match(answer, /\[muse_unavailable\]/);
+    assert.ok(answer.length <= 400, `len ${answer.length}`);
+  } finally {
+    agent.close();
+  }
+});
+
+test("a socket close ends the turn with the same RetriableError shape", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  fs.writeFileSync(
+    script,
+    JSON.stringify(["@@error Muse gateway socket closed", "@@error Muse gateway socket closed"]),
+  );
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_RETRY_DELAYS_MS: "1" });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const answer = chunkText(agent.updates);
+    assert.match(answer, /^RetriableError: \[muse_unavailable\] Muse gateway socket closed/);
+    assert.ok(answer.length <= 400, `len ${answer.length}`);
+  } finally {
+    agent.close();
+  }
 });
