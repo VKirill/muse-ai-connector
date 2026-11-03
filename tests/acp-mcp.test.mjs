@@ -113,7 +113,7 @@ test("stdio MCP server: mcp__fake__echo round-trips through the tool loop", asyn
   assert.ok(agent.updates.some((u) => u.sessionUpdate === "tool_call" && u.title.startsWith("mcp__fake__echo")));
   assert.ok(agent.updates.some((u) => u.sessionUpdate === "tool_call_update" && u.status === "completed"));
   assert.match(sent[0], /mcp__fake__echo/);
-  assert.match(sent[1], /^TOOL RESULT mcp__fake__echo \(ok\):\necho:zz/);
+  assert.match(sent[1], /^TOOL RESULT 1\/1 mcp__fake__echo \(ok\):\necho:zz/);
   assert.ok(!sent.some((t) => t.includes("s3cret")), "env secret must not reach Muse");
 });
 
@@ -143,7 +143,7 @@ test("http MCP server answers a tools/call over JSON-RPC POST", async () => {
     const url = `http://127.0.0.1:${server.address().port}/mcp`;
     const { result, sent } = await runToolLoop({}, [{ type: "http", name: "hfake", url, headers: [{ name: "x-test", value: "1" }] }], "mcp__hfake__echo");
     assert.equal(result.stopReason, "end_turn");
-    assert.match(sent[1], /^TOOL RESULT mcp__hfake__echo \(ok\):\necho:zz/);
+    assert.match(sent[1], /^TOOL RESULT 1\/1 mcp__hfake__echo \(ok\):\necho:zz/);
   } finally {
     server.close();
   }
@@ -159,7 +159,7 @@ test("a server whose command does not exist is skipped while the other works", a
     "mcp__fake__echo",
   );
   assert.equal(result.stopReason, "end_turn");
-  assert.match(sent[1], /^TOOL RESULT mcp__fake__echo \(ok\):\necho:zz/);
+  assert.match(sent[1], /^TOOL RESULT 1\/1 mcp__fake__echo \(ok\):\necho:zz/);
   const toolCalls = agent.updates.filter((u) => u.sessionUpdate === "tool_call").map((u) => u.title);
   assert.deepEqual(toolCalls.map((t) => t.split(" ")[0]), ["mcp__fake__echo"]);
 });

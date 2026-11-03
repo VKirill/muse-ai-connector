@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
@@ -179,8 +179,8 @@ test("tool loop: write_file then bash run in the session cwd, final reply stream
     const sentLines = fs.readFileSync(sent, "utf8").trim().split("\n").map((l) => JSON.parse(l).text);
     assert.equal(sentLines.length, 3);
     assert.match(sentLines[0], /muse-tool/);
-    assert.match(sentLines[1], /^TOOL RESULT write_file \(ok\):/);
-    assert.match(sentLines[2], /^TOOL RESULT bash \(ok\):\nexit 0\nhi from muse/);
+    assert.match(sentLines[1], /^TOOL RESULT 1\/1 write_file \(ok\):/);
+    assert.match(sentLines[2], /^TOOL RESULT 1\/1 bash \(ok\):\nexit 0\nhi from muse/);
   } finally {
     agent.close();
   }
@@ -200,7 +200,7 @@ test("bad JSON block goes back to Muse as TOOL RESULT (error)", async () => {
     assert.equal(result.stopReason, "end_turn");
     assert.ok(agent.updates.some((u) => u.sessionUpdate === "tool_call_update" && u.status === "failed"));
     const sentLines = fs.readFileSync(sent, "utf8").trim().split("\n").map((l) => JSON.parse(l).text);
-    assert.match(sentLines[1], /^TOOL RESULT muse-tool \(error\):\ninvalid muse-tool JSON/);
+    assert.match(sentLines[1], /^TOOL RESULT 1\/1 muse-tool \(error\):\ninvalid muse-tool JSON/);
     assert.equal(chunkText(agent.updates), "sorry");
   } finally {
     agent.close();
@@ -299,7 +299,7 @@ test("a nudge leads to a tool call, then [[done]] ends the turn and is stripped"
       .map((l) => JSON.parse(l).text);
     assert.equal(sentLines.length, 3);
     assert.match(sentLines[1], /no \[\[done\]\] line/);
-    assert.match(sentLines[2], /^TOOL RESULT write_file \(ok\):/);
+    assert.match(sentLines[2], /^TOOL RESULT 1\/1 write_file \(ok\):/);
     assert.equal(chunkText(agent.updates), "All done: hi from muse");
     assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.Writing the file.");
   } finally {
@@ -388,4 +388,125 @@ test("a [[done]] in mid-text is not a marker and gets the nudge", async () => {
   } finally {
     agent.close();
   }
+});
+
+test("parseToolCalls: 0, 1, 3 and 9 blocks; a cut block among valid ones; blocks inside text", async () => {
+  const { parseToolCalls } = await import("../bridge/acp-tools.mjs");
+  assert.equal(parseToolCalls("plain").kind, "none");
+  const one = parseToolCalls(`t\n${block({ tool: "read_file", args: { path: "a" } })}`);
+  assert.equal(one.kind, "calls");
+  assert.equal(one.calls.length, 1);
+  assert.equal(one.calls[0].name, "read_file");
+  const three = parseToolCalls(
+    `${block({ tool: "read_file", args: { path: "a" } })}\nbetween\n${block({ tool: "grep", args: { pattern: "x" } })}\n${block({ tool: "list_dir", args: {} })}`,
+  );
+  assert.equal(three.calls.length, 3);
+  assert.deepEqual(three.calls.map((c) => c.name), ["read_file", "grep", "list_dir"]);
+  assert.match(three.thought, /between/);
+  const nine = parseToolCalls(Array.from({ length: 9 }, (_, i) => block({ tool: "bash", args: { command: `c${i}` } })).join("\n"));
+  assert.equal(nine.calls.length, 8);
+  assert.equal(nine.dropped, 1);
+  const cut = parseToolCalls(
+    `${block({ tool: "read_file", args: { path: "a" } })}\n\`\`\`muse-tool\n{"tool":"bash","args":{"command":"unclosed\n${block({ tool: "list_dir", args: {} })}`,
+  );
+  assert.equal(cut.calls.length, 3);
+  assert.equal(cut.calls[0].kind, "call");
+  assert.equal(cut.calls[1].kind, "error");
+  assert.match(cut.calls[1].error, /cut off inside a string/);
+  assert.equal(cut.calls[2].name, "list_dir");
+});
+
+test("several muse-tool blocks run in order and go back as one message with sections", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(
+    script,
+    JSON.stringify([
+      `${block({ tool: "write_file", args: { path: "a.txt", content: "A" } })}\n${block({ tool: "write_file", args: { path: "b.txt", content: "B" } })}\n${block({ tool: "bash", args: { command: "cat a.txt b.txt" } })}`,
+      "done\n[[done]]",
+    ]),
+  );
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    assert.equal(fs.readFileSync(path.join(ws, "a.txt"), "utf8"), "A");
+    assert.equal(fs.readFileSync(path.join(ws, "b.txt"), "utf8"), "B");
+    const sentLines = fs.readFileSync(sent, "utf8").trim().split("\n").map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 2);
+    const reply = sentLines[1];
+    assert.match(reply, /^TOOL RESULT 1\/3 write_file \(ok\):/);
+    assert.match(reply, /TOOL RESULT 2\/3 write_file \(ok\):/);
+    assert.match(reply, /TOOL RESULT 3\/3 bash \(ok\):\nexit 0\nAB/);
+    assert.equal(agent.updates.filter((u) => u.sessionUpdate === "tool_call").length, 3);
+  } finally {
+    agent.close();
+  }
+});
+
+test("apply_patch: applies a two-file diff, refuses ../, reports a failing hunk", async () => {
+  const cwd = fs.mkdtempSync("/tmp/muse-ws-");
+  const ctx = { cwd, sessionId: "s", fsRead: false, fsWrite: false, clientRequest: async () => ({}) };
+  fs.writeFileSync(path.join(cwd, "a.txt"), "one\n");
+  fs.writeFileSync(path.join(cwd, "b.txt"), "two\n");
+  await spawnSync("git", ["init", "-q"], { cwd });
+  const diff = [
+    "diff --git a/a.txt b/a.txt",
+    "--- a/a.txt",
+    "+++ b/a.txt",
+    "@@ -1 +1 @@",
+    "-one",
+    "+ONE",
+    "diff --git a/b.txt b/b.txt",
+    "--- a/b.txt",
+    "+++ b/b.txt",
+    "@@ -1 +1 @@",
+    "-two",
+    "+TWO",
+    "",
+  ].join("\n");
+  const ok = await runTool("apply_patch", { patch: diff }, ctx);
+  assert.equal(ok.ok, true, ok.output);
+  assert.match(ok.output, /a\.txt/);
+  assert.match(ok.output, /b\.txt/);
+  assert.equal(fs.readFileSync(path.join(cwd, "a.txt"), "utf8"), "ONE\n");
+  assert.equal(fs.readFileSync(path.join(cwd, "b.txt"), "utf8"), "TWO\n");
+  const escape = await runTool(
+    "apply_patch",
+    { patch: "diff --git a/../x b/../x\n--- a/../x\n+++ b/../x\n@@ -1 +1 @@\n-a\n+b\n" },
+    ctx,
+  );
+  assert.equal(escape.ok, false);
+  assert.match(escape.output, /outside workspace/);
+  const bad = await runTool("apply_patch", { patch: diff }, ctx);
+  assert.equal(bad.ok, false);
+  assert.match(bad.output, /apply_patch failed/);
+});
+
+test("glob: matches a pattern and skips node_modules", async () => {
+  const cwd = fs.mkdtempSync("/tmp/muse-ws-");
+  const ctx = { cwd, sessionId: "s", fsRead: false, fsWrite: false, clientRequest: async () => ({}) };
+  fs.mkdirSync(path.join(cwd, "src", "deep"), { recursive: true });
+  fs.mkdirSync(path.join(cwd, "node_modules", "pkg"), { recursive: true });
+  fs.writeFileSync(path.join(cwd, "src", "a.ts"), "");
+  fs.writeFileSync(path.join(cwd, "src", "deep", "b.ts"), "");
+  fs.writeFileSync(path.join(cwd, "src", "c.js"), "");
+  fs.writeFileSync(path.join(cwd, "node_modules", "pkg", "d.ts"), "");
+  const res = await runTool("glob", { pattern: "src/**/*.ts" }, ctx);
+  assert.equal(res.ok, true);
+  assert.deepEqual(res.output.split("\n").sort(), ["src/a.ts", "src/deep/b.ts"]);
+});
+
+test("output cap: 50 KB becomes <= 8 KB with a cut line", async () => {
+  const { cap } = await import("../bridge/acp-tools.mjs");
+  const big = "x".repeat(50 * 1024);
+  const out = cap(big);
+  assert.ok(out.length <= 8 * 1024, `len ${out.length}`);
+  assert.match(out, /… \d+ bytes cut …/);
+  assert.ok(out.startsWith("x".repeat(100)));
+  assert.ok(out.endsWith("x".repeat(100)));
 });

@@ -7,7 +7,7 @@ import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { collectPrompt, extractBbContext } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
-import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
+import { buildIntro, cap, MAX_TOOL_CALLS, MESSAGE_CAP, OUTPUT_CAP, parseToolCalls, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { readJson, updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 import { extractImages, imagePrompt, parseLeadingFormat, saveImages } from "../bridge/images.mjs";
@@ -472,13 +472,13 @@ async function runPrompt(session, params) {
           sendInFlight = false;
           session.museChatId = result.chatId;
           saveSession(session);
-          const call = parseToolCall(result.text);
-          if (call.kind === "none") {
-            const done = stripDoneMarker(call.text);
+          const parsed = parseToolCalls(result.text);
+          if (parsed.kind === "none") {
+            const done = stripDoneMarker(parsed.text);
             if (done === null) {
               blockless += 1;
               if (blockless < MAX_BLOCKLESS_REPLIES) {
-                update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: call.text } });
+                update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: parsed.text } });
                 rounds += 1;
                 if (rounds >= MAX_TOOL_ROUNDS) {
                   update(session.id, {
@@ -491,32 +491,40 @@ async function runPrompt(session, params) {
                 continue;
               }
             }
-            const final = done ?? call.text;
+            const final = done ?? parsed.text;
             streamed += final;
             update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: final } });
             return { stopReason: "end_turn" };
           }
           blockless = 0;
-          const thought = stripDoneMarker(call.thought) ?? call.thought;
+          const thought = stripDoneMarker(parsed.thought) ?? parsed.thought;
           if (thought) {
             update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: thought } });
           }
-          const toolCallId = `muse-tool-${++toolCallSeq}`;
-          update(session.id, {
-            sessionUpdate: "tool_call",
-            toolCallId,
-            title: toolTitle(call.name, call.args),
-            kind: toolKind(call.name),
-            status: "in_progress",
-            rawInput: call.args,
-          });
-          const res = call.kind === "call" ? await runTool(call.name, call.args, ctx) : { ok: false, output: call.error };
-          update(session.id, {
-            sessionUpdate: "tool_call_update",
-            toolCallId,
-            status: res.ok ? "completed" : "failed",
-            content: [{ type: "content", content: { type: "text", text: res.output.slice(0, OUTPUT_CAP) } }],
-          });
+          const sections = [];
+          for (const call of parsed.calls) {
+            const toolCallId = `muse-tool-${++toolCallSeq}`;
+            update(session.id, {
+              sessionUpdate: "tool_call",
+              toolCallId,
+              title: toolTitle(call.name, call.args),
+              kind: toolKind(call.name),
+              status: "in_progress",
+              rawInput: call.args,
+            });
+            const res = call.kind === "call" ? await runTool(call.name, call.args, ctx) : { ok: false, output: call.error };
+            update(session.id, {
+              sessionUpdate: "tool_call_update",
+              toolCallId,
+              status: res.ok ? "completed" : "failed",
+              content: [{ type: "content", content: { type: "text", text: res.output.slice(0, OUTPUT_CAP) } }],
+            });
+            sections.push(resultMessage(call.name, res.ok, res.output, sections.length + 1, parsed.calls.length));
+            if (session.cancelled) return { stopReason: "cancelled" };
+          }
+          if (parsed.dropped) {
+            sections.push(`${parsed.dropped} more muse-tool block(s) were dropped: at most ${MAX_TOOL_CALLS} run per reply.`);
+          }
           rounds += 1;
           if (rounds >= MAX_TOOL_ROUNDS) {
             update(session.id, {
@@ -525,7 +533,7 @@ async function runPrompt(session, params) {
             });
             return { stopReason: "end_turn" };
           }
-          toSend = resultMessage(call.name, res.ok, res.output);
+          toSend = cap(sections.join("\n\n"), MESSAGE_CAP);
         }
       } finally {
         if (opened.ephemeral) await driver.close();

@@ -147,7 +147,7 @@ test("list_skills and read_skill run through the tool loop", async () => {
       .trim()
       .split("\n")
       .map((l) => JSON.parse(l).text);
-    assert.match(texts[1], /^TOOL RESULT list_skills \(ok\):\nzebra-skill — Paint zebra stripes on things/);
+    assert.match(texts[1], /^TOOL RESULT 1\/1 list_skills \(ok\):\nzebra-skill — Paint zebra stripes on things/);
     assert.match(texts[2], /STRIPE-RULE-42: always black first/);
   } finally {
     agent.close();
