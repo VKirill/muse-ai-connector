@@ -110,10 +110,15 @@ test("session/new advertises muse-spark and session/set_model accepts it", async
     const created = await agent.request("session/new", { cwd: "/tmp" });
     assert.deepEqual(created.models, {
       currentModelId: "muse-spark",
-      availableModels: [{ modelId: "muse-spark", name: "Muse Spark" }],
+      availableModels: [
+        { modelId: "muse-spark", name: "Muse Spark" },
+        { modelId: "muse-image", name: "Muse Image" },
+      ],
     });
     const set = await agent.request("session/set_model", { sessionId: created.sessionId, modelId: "muse-spark" });
     assert.deepEqual(set, {});
+    const setImage = await agent.request("session/set_model", { sessionId: created.sessionId, modelId: "muse-image" });
+    assert.deepEqual(setImage, {});
     await assert.rejects(
       () => agent.request("session/set_model", { sessionId: created.sessionId, modelId: "unknown" }),
       (err) => err.code === -32602,
