@@ -21,9 +21,94 @@
   --muse-warning: var(--pk-warning, var(--warning));
   --muse-warning-text: var(--pk-warning-text, var(--warning));
   --muse-danger-text: var(--pk-danger-text, var(--destructive));
+  --muse-space: var(--spacing, 12px);
 }
 
 @layer components {
+  .muse-layout {
+    display: grid;
+    grid-template-columns: 200px 1fr;
+    gap: var(--muse-space);
+    min-width: 0;
+    max-width: 100%;
+    align-items: start;
+  }
+
+  .muse-sidenav {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .muse-sidenav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--foreground);
+    font-size: 13px;
+    font-weight: 500;
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .muse-sidenav-btn[aria-selected="true"] {
+    border-color: transparent;
+    background-color: var(--primary);
+    background-image: var(--muse-accent);
+    box-shadow: var(--muse-accent-edge);
+    color: var(--muse-on-accent);
+  }
+
+  .muse-badge {
+    display: inline-flex;
+    min-width: 1.25rem;
+    justify-content: center;
+    padding: 0 6px;
+    border-radius: 9999px;
+    background-color: color-mix(in oklab, var(--foreground) 10%, transparent);
+    font-size: 11px;
+    font-weight: 600;
+  }
+
+  .muse-sidenav-btn[aria-selected="true"] .muse-badge {
+    background-color: color-mix(in oklab, var(--muse-on-accent) 22%, transparent);
+    color: var(--muse-on-accent);
+  }
+
+  .muse-workspace {
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: var(--muse-space);
+  }
+
+  .muse-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .muse-toolbar-copy {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .muse-toolbar-title {
+    font-size: 16px;
+    font-weight: 650;
+  }
+
   .muse-panel {
     min-width: 0;
     max-width: 100%;
@@ -38,6 +123,7 @@
     display: flex;
     min-width: 0;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
     padding: 8px 10px;
     font-size: 13px;
@@ -59,11 +145,29 @@
 
   .muse-card {
     min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
     padding: 12px;
     border: 1px solid var(--muse-hairline);
     border-radius: 14px;
     background-color: var(--muse-card);
     box-shadow: var(--muse-drop);
+  }
+
+  .muse-card-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .muse-card-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px;
   }
 
   .muse-row {
@@ -129,6 +233,11 @@
     cursor: pointer;
   }
 
+  .muse-btn-compact {
+    padding: 4px 8px;
+    font-size: 12px;
+  }
+
   .muse-btn:disabled {
     cursor: not-allowed;
     opacity: 0.5;
@@ -144,6 +253,11 @@
 
   .muse-btn-accent:hover:not(:disabled) {
     filter: brightness(1.05) saturate(1.05);
+  }
+
+  .muse-btn-danger {
+    border-color: color-mix(in oklab, var(--muse-danger-text) 35%, var(--muse-outline));
+    color: var(--muse-danger-text);
   }
 
   .muse-check {
@@ -264,7 +378,14 @@
     gap: 6px;
   }
 
+  .muse-meter-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
   .muse-meter {
+    flex: 1 1 auto;
     width: 100%;
     height: 8px;
     overflow: hidden;
@@ -281,10 +402,50 @@
     background-image: var(--muse-accent);
   }
 
+  .muse-meter-loading .muse-meter-fill {
+    width: 40%;
+    animation: muse-meter-pulse 1s ease-in-out infinite;
+  }
+
+  .muse-meter-pct {
+    flex: 0 0 auto;
+    font-size: 20px;
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .muse-divider {
+    height: 0;
+    margin: 2px 0;
+    border: 0;
+    border-top: 1px solid var(--muse-hairline);
+  }
+
+  .muse-kv {
+    display: grid;
+    grid-template-columns: minmax(5rem, 8rem) 1fr;
+    gap: 6px 12px;
+    font-size: 13px;
+  }
+
+  .muse-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .muse-table td {
+    padding: 6px 8px 6px 0;
+    vertical-align: middle;
+  }
+
   .muse-steps {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    margin: 0;
+    padding-left: 1.25rem;
     color: var(--muted-foreground);
     font-size: 13px;
   }
@@ -298,13 +459,41 @@
     padding: 4px 0;
     font-size: 13px;
   }
+
+  .muse-confirm {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 8px;
+    border: 1px solid var(--muse-hairline);
+    border-radius: 10px;
+    background-color: var(--muse-well);
+  }
+}
+
+@media (max-width: 720px) {
+  .muse-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .muse-sidenav {
+    flex-direction: row;
+    overflow-x: auto;
+  }
+
+  .muse-sidenav-btn {
+    width: auto;
+    flex: 1 0 auto;
+  }
 }
 
 @media (max-width: 36rem) {
   .muse-row,
   .muse-account,
   .muse-actions,
-  .muse-compact {
+  .muse-compact,
+  .muse-card-head,
+  .muse-toolbar {
     flex-direction: column;
     align-items: stretch;
   }
@@ -313,5 +502,11 @@
 @keyframes muse-spin {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes muse-meter-pulse {
+  50% {
+    opacity: 0.45;
   }
 }

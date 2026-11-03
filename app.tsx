@@ -7,14 +7,26 @@ import type { HostEntry, MergedUsageAccount, SyncRow, rpcContract } from "./serv
 type AccountRow = NonNullable<HostEntry["status"]>["accounts"][number];
 type HostStatus = NonNullable<HostEntry["status"]>;
 type PanelPage = "" | "machines" | "add";
+type MergedAccount = AccountRow & { machines: Array<{ hostId: string; name: string; account: AccountRow }> };
 
-function Row({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
-  return (
-    <div className="muse-row">
-      <span className="muse-row-label">{label}</span>
-      <span className={bad ? "muse-text-danger" : undefined}>{value}</span>
-    </div>
-  );
+function useLocale(): void {
+  const [, setLocale] = useState(() => t("navAccounts"));
+  useEffect(() => {
+    const sync = () => setLocale(t("navAccounts"));
+    const el = globalThis.document?.documentElement;
+    if (!el || typeof MutationObserver === "undefined") return;
+    const observer = new MutationObserver(sync);
+    observer.observe(el, { attributes: true, attributeFilter: ["lang", "data-pk-lang"] });
+    const t1 = globalThis.setTimeout(sync, 500);
+    const t2 = globalThis.setTimeout(sync, 2000);
+    const t3 = globalThis.setTimeout(sync, 5000);
+    return () => {
+      observer.disconnect();
+      globalThis.clearTimeout(t1);
+      globalThis.clearTimeout(t2);
+      globalThis.clearTimeout(t3);
+    };
+  }, []);
 }
 
 function statusPill(account: Pick<AccountRow, "locked" | "status">): { className: string; label: string } {
@@ -52,8 +64,12 @@ function uniqueAccountCount(hosts: HostEntry[]): number {
   return new Set(hosts.flatMap((h) => h.status?.accounts.map((a) => a.id) ?? [])).size;
 }
 
-function mergedAccounts(hosts: HostEntry[]): Array<AccountRow & { machines: Array<{ hostId: string; name: string; account: AccountRow }> }> {
-  const map = new Map<string, AccountRow & { machines: Array<{ hostId: string; name: string; account: AccountRow }> }>();
+function connectedMachineCount(hosts: HostEntry[]): number {
+  return hosts.filter((h) => h.connected).length;
+}
+
+function mergedAccounts(hosts: HostEntry[]): MergedAccount[] {
+  const map = new Map<string, MergedAccount>();
   for (const host of hosts) {
     for (const account of host.status?.accounts ?? []) {
       let row = map.get(account.id);
@@ -81,44 +97,13 @@ function formatReset(usage: MergedUsageAccount["usage"]): string {
   return "";
 }
 
-function RuntimeRow({
-  st,
-  busy,
-  onInstall,
-}: {
-  st: HostStatus;
-  busy: boolean;
-  onInstall: () => void;
-}) {
-  const rt = st.runtime;
-  if (st.platform === "win32") {
-    return <Row label={t("runtime")} value={t("runtimeUnsupported")} bad />;
-  }
-  if (rt.installing) {
-    return (
-      <div className="muse-row">
-        <span className="muse-row-label">{t("runtime")}</span>
-        <span className="muse-progress">
-          <span className="muse-spinner" aria-hidden="true" />
-          {t("runtimeInstalling")}
-        </span>
-      </div>
-    );
-  }
-  if (rt.installed) {
-    return <Row label={t("runtime")} value={t("runtimeInstalled", { version: rt.version ?? "?" })} />;
-  }
-  return (
-    <div className="muse-row">
-      <span className="muse-row-label">{t("runtime")}</span>
-      <span className="muse-actions">
-        <span className="muse-text-danger">{t("runtimeMissing")}</span>
-        <button type="button" className="muse-btn" disabled={busy} onClick={onInstall}>
-          {t("install")}
-        </button>
-      </span>
-    </div>
-  );
+function chromeValue(st: HostStatus): string {
+  if (!st.chromeFound) return t("chromeMissing");
+  return st.chromePath ? `${t("chromeFound")} (${st.chromePath})` : t("chromeFound");
+}
+
+function bridgeValue(st: HostStatus): string {
+  return st.bridgeFound ? `musebridge ${st.bridgeVersion ?? "?"}` : t("bridgeMissing");
 }
 
 function MachineCard({
@@ -133,130 +118,267 @@ function MachineCard({
   const st = h.status;
   if (!st) {
     const value = h.error ? `${t("noAnswer")}: ${h.error}` : h.connected ? t("noAnswer") : t("offline");
-    return <Row label={h.name} value={value} bad={Boolean(h.error) || !h.connected} />;
+    return (
+      <div className="muse-card">
+        <div className="muse-card-head">
+          <span className="muse-account-name">{h.name}</span>
+          <span className={h.connected ? "muse-pill muse-pill-success" : "muse-pill muse-pill-muted"}>
+            {h.connected ? t("connected") : t("offline")}
+          </span>
+        </div>
+        <div className={h.error || !h.connected ? "muse-text-danger" : "muse-muted"}>{value}</div>
+      </div>
+    );
   }
+  const rt = st.runtime;
   return (
-    <div className="muse-panel">
-      <div className="muse-panel-head">
-        <span>{h.name}</span>
-        <span className={h.connected ? "muse-pill muse-pill-success" : "muse-pill muse-pill-muted"}>
-          {h.connected ? t("connected") : t("offline")}
+    <div className="muse-card">
+      <div className="muse-card-head">
+        <div className="muse-account-name">
+          <span>{h.name}</span>
+          <span className={h.connected ? "muse-pill muse-pill-success" : "muse-pill muse-pill-muted"}>
+            {h.connected ? t("connected") : t("offline")}
+          </span>
+        </div>
+        {rt.installing ? (
+          <span className="muse-progress">
+            <span className="muse-spinner" aria-hidden="true" />
+            {t("runtimeInstalling")}
+          </span>
+        ) : rt.installed ? (
+          <span className="muse-muted">{t("runtimeInstalled", { version: rt.version ?? "?" })}</span>
+        ) : st.platform === "win32" ? (
+          <span className="muse-text-danger">{t("runtimeUnsupported")}</span>
+        ) : (
+          <button type="button" className="muse-btn muse-btn-compact" disabled={busy} onClick={() => onInstall(h.hostId)}>
+            {t("install")}
+          </button>
+        )}
+      </div>
+      <div className="muse-kv">
+        <span className="muse-row-label">{t("chrome")}</span>
+        <span className={!st.chromeFound ? "muse-text-danger" : undefined}>{chromeValue(st)}</span>
+        <span className="muse-row-label">{t("bridge")}</span>
+        <span className={!st.bridgeFound ? "muse-text-danger" : undefined}>{bridgeValue(st)}</span>
+        <span className="muse-row-label">{t("agent")}</span>
+        <span className={!st.agentFound ? "muse-text-danger" : undefined}>
+          {st.agentFound ? t("agentFound") : t("agentMissing")}
         </span>
       </div>
-      <div className="muse-panel-body">
-        <RuntimeRow st={st} busy={busy} onInstall={() => onInstall(h.hostId)} />
-        <Row label={t("chrome")} value={st.chromeFound ? `${t("chromeFound")}${st.chromePath ? ` (${st.chromePath})` : ""}` : t("chromeMissing")} bad={!st.chromeFound} />
-        <Row label={t("bridge")} value={st.bridgeFound ? `musebridge ${st.bridgeVersion ?? "?"}` : t("bridgeMissing")} bad={!st.bridgeFound} />
-        <Row label={t("agent")} value={st.agentFound ? t("agentFound") : t("agentMissing")} bad={!st.agentFound} />
-        {st.runtime.error ? <div className="muse-error">{st.runtime.error}</div> : null}
-        {st.problems.map((p) => (
-          <div key={p} className="muse-error">
-            {p}
-          </div>
-        ))}
-        <div className="muse-muted">{t("accounts")}</div>
-        {st.accounts.length === 0 ? <div className="muse-muted">{t("emptyAccounts")}</div> : null}
-        {st.accounts.map((account) => {
-          const pill = statusPill(account);
-          return (
-            <div key={account.id} className="muse-compact">
-              <span className="muse-account-name">
-                <span>{account.label}</span>
-                <span className={pill.className}>{pill.label}</span>
-              </span>
-              <span className="muse-muted">{t("busySlots", { busy: String(account.busy ?? 0), max: String(account.max ?? 1) })}</span>
-            </div>
-          );
-        })}
-      </div>
+      {st.runtime.error ? <div className="muse-error">{st.runtime.error}</div> : null}
+      {st.problems.map((p) => (
+        <div key={p} className="muse-error">
+          {p}
+        </div>
+      ))}
+      {st.accounts.length === 0 ? <div className="muse-muted">{t("emptyAccounts")}</div> : null}
+      {st.accounts.length > 0 ? (
+        <table className="muse-table">
+          <tbody>
+            {st.accounts.map((account) => {
+              const pill = statusPill(account);
+              return (
+                <tr key={account.id}>
+                  <td>
+                    <span className="muse-account-name">{account.label}</span>
+                  </td>
+                  <td>
+                    <span className={pill.className}>{pill.label}</span>
+                  </td>
+                  <td className="muse-muted">{t("busySlots", { busy: String(account.busy ?? 0), max: String(account.max ?? 1) })}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : null}
     </div>
+  );
+}
+
+function AccountMeter({
+  usage,
+  loading,
+  onRetry,
+}: {
+  usage: MergedUsageAccount | undefined;
+  loading: boolean;
+  onRetry: () => void;
+}) {
+  const snapshot = usage?.usage;
+  const percent = snapshot?.percentUsed;
+  const meter = typeof percent === "number" ? Math.max(0, Math.min(100, percent)) : 0;
+  const reset = formatReset(snapshot ?? null);
+  const extra = snapshot?.extraTokensLeftLabel ?? (snapshot?.extraTokensBalance != null ? String(snapshot.extraTokensBalance) : "");
+  if (loading) {
+    return (
+      <div className="muse-meter-row">
+        <div className="muse-meter muse-meter-loading" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageLoading")}>
+          <span className="muse-meter-fill" />
+        </div>
+        <span className="muse-muted">{t("usageLoading")}</span>
+      </div>
+    );
+  }
+  if (usage?.error) {
+    return (
+      <div className="muse-meter-row">
+        <div className="muse-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageUnavailable", { reason: usage.error.message })}>
+          <span className="muse-meter-fill" />
+        </div>
+        <span className="muse-error">{t("usageUnavailable", { reason: usage.error.message })}</span>
+      </div>
+    );
+  }
+  if (!snapshot) {
+    return (
+      <div className="muse-meter-row">
+        <div className="muse-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageNotRead")}>
+          <span className="muse-meter-fill" />
+        </div>
+        <span className="muse-muted">
+          {t("usageNotRead")}
+          {" · "}
+          <button type="button" className="muse-btn muse-btn-compact" onClick={onRetry}>
+            {t("retry")}
+          </button>
+        </span>
+      </div>
+    );
+  }
+  const unlimited = typeof percent !== "number";
+  return (
+    <>
+      <div>{t("usagePlan", { name: snapshot.plan ?? "—" })}</div>
+      <div className="muse-meter-row">
+        <div
+          className="muse-meter"
+          role="progressbar"
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={unlimited ? undefined : meter}
+          aria-valuetext={unlimited ? t("usageUnlimited") : t("weeklyUsed", { n: String(percent) })}
+          style={{ ["--muse-meter" as string]: `${meter}%` }}
+        >
+          <span className="muse-meter-fill" />
+        </div>
+        <span className="muse-meter-pct">{unlimited ? t("usageUnlimited") : t("weeklyUsed", { n: String(percent) })}</span>
+      </div>
+      <div className="muse-muted">
+        {reset ? t("usageResets", { when: reset }) : ""}
+        {reset && extra ? " · " : ""}
+        {extra ? t("usageExtraTokens", { value: extra }) : ""}
+      </div>
+    </>
   );
 }
 
 function AccountLimitCard({
   account,
   usage,
+  loading,
   busy,
   onCheck,
   onSync,
   onRemove,
+  onRetry,
 }: {
-  account: ReturnType<typeof mergedAccounts>[number];
+  account: MergedAccount;
   usage: MergedUsageAccount | undefined;
+  loading: boolean;
   busy: boolean;
   onCheck: (hostId: string, id: string) => void;
   onSync: (hostId: string, id: string) => void;
   onRemove: (hostId: string, id: string, purge: boolean) => void;
+  onRetry: () => void;
 }) {
+  const [confirming, setConfirming] = useState(false);
+  const [purge, setPurge] = useState(false);
   const pill = statusPill(account);
-  const snapshot = usage?.usage;
-  const percent = snapshot?.percentUsed;
-  const reset = formatReset(snapshot ?? null);
-  const extra = snapshot?.extraTokensLeftLabel ?? (snapshot?.extraTokensBalance != null ? String(snapshot.extraTokensBalance) : "");
   const actionHost = account.machines.find((m) => m.account.status === "signed_in") ?? account.machines[0];
-  const meter = typeof percent === "number" ? Math.max(0, Math.min(100, percent)) : 0;
   return (
     <div className="muse-card">
-      <div className="muse-account-name">
-        <span>{account.label}</span>
-        <span className={pill.className}>{pill.label}</span>
-      </div>
-      <div className="muse-muted">
-        {account.id} · {lastUsedLabel(account.lastUsedAt)}
-      </div>
-      {usage?.error ? <div className="muse-error">{t("usageUnavailable", { reason: usage.error.message })}</div> : null}
-      {!usage?.error && snapshot ? (
-        <>
-          <div>{t("usagePlan", { name: snapshot.plan ?? "—" })}</div>
-          <div className="muse-meter" style={{ ["--muse-meter" as string]: `${meter}%` }}>
-            <span className="muse-meter-fill" />
+      <div className="muse-card-head">
+        <div className="muse-account-meta">
+          <div className="muse-account-name">
+            <span>{account.label}</span>
+            <span className={pill.className}>{pill.label}</span>
           </div>
-          <div className="muse-muted">{typeof percent === "number" ? t("usageUsed", { n: String(percent) }) : t("usageUnlimited")}</div>
-          {reset ? <div className="muse-muted">{t("usageResets", { when: reset })}</div> : null}
-          {extra ? <div className="muse-muted">{t("usageExtraTokens", { value: extra })}</div> : null}
-        </>
+          <span className="muse-muted">{account.id}</span>
+        </div>
+        <div className="muse-card-actions">
+          <button
+            type="button"
+            className="muse-btn muse-btn-compact"
+            disabled={busy || !actionHost}
+            onClick={() => actionHost && onCheck(actionHost.hostId, account.id)}
+          >
+            {t("check")}
+          </button>
+          <button
+            type="button"
+            className="muse-btn muse-btn-compact"
+            disabled={busy || !actionHost}
+            onClick={() => actionHost && onSync(actionHost.hostId, account.id)}
+          >
+            {t("copyToAll")}
+          </button>
+          <button
+            type="button"
+            className="muse-btn muse-btn-compact muse-btn-danger"
+            disabled={busy || !actionHost}
+            onClick={() => {
+              setPurge(false);
+              setConfirming(true);
+            }}
+          >
+            {t("remove")}
+          </button>
+        </div>
+      </div>
+      {confirming ? (
+        <div className="muse-confirm">
+          <div>{t("confirmRemove", { label: account.label })}</div>
+          <label className="muse-check">
+            <input type="checkbox" checked={purge} onChange={(e) => setPurge(e.target.checked)} />
+            {t("purgeProfile")}
+          </label>
+          <div className="muse-actions">
+            <button
+              type="button"
+              className="muse-btn muse-btn-danger"
+              disabled={busy || !actionHost}
+              onClick={() => {
+                if (!actionHost) return;
+                onRemove(actionHost.hostId, account.id, purge);
+                setConfirming(false);
+              }}
+            >
+              {t("confirm")}
+            </button>
+            <button type="button" className="muse-btn" onClick={() => setConfirming(false)}>
+              {t("cancel")}
+            </button>
+          </div>
+        </div>
       ) : null}
-      {account.max ? <div className="muse-muted">{t("usageParallel", { n: String(account.max) })}</div> : null}
-      <div className="muse-muted">{t("accountOnMachines", { names: account.machines.map((m) => m.name).join(", ") })}</div>
+      <AccountMeter usage={usage} loading={loading} onRetry={onRetry} />
+      <div className="muse-divider" />
+      <div className="muse-muted">
+        {account.max ? t("usageParallel", { n: String(account.max) }) : ""}
+        {account.max ? " · " : ""}
+        {lastUsedLabel(account.lastUsedAt)}
+      </div>
       <div className="muse-chips">
         {account.machines.map((m) => {
           const chip = statusPill(m.account);
+          const mark = m.account.status === "signed_in" ? " ✓" : "";
           return (
             <span key={m.hostId} className={chip.className}>
-              {m.name}: {chip.label}
+              {`${m.name}${mark} · ${chip.label}`}
             </span>
           );
         })}
-      </div>
-      <div className="muse-actions">
-        <button
-          type="button"
-          className="muse-btn"
-          disabled={busy || !actionHost}
-          onClick={() => actionHost && onCheck(actionHost.hostId, account.id)}
-        >
-          {t("check")}
-        </button>
-        <button
-          type="button"
-          className="muse-btn"
-          disabled={busy || !actionHost}
-          onClick={() => actionHost && onSync(actionHost.hostId, account.id)}
-        >
-          {t("copyToAll")}
-        </button>
-        <button
-          type="button"
-          className="muse-btn"
-          disabled={busy || !actionHost}
-          onClick={() => {
-            if (!actionHost) return;
-            if (!globalThis.confirm(t("removeConfirm", { label: account.label }))) return;
-            onRemove(actionHost.hostId, account.id, globalThis.confirm(t("purgeProfile")));
-          }}
-        >
-          {t("remove")}
-        </button>
       </div>
     </div>
   );
@@ -312,7 +434,34 @@ function useMuseHosts() {
   return { rpc, hosts, error, busy, setBusy, addingHostId, setAddingHostId, notice, setNotice, mergeHosts, load, run };
 }
 
+function Toolbar({
+  title,
+  summary,
+  onRefresh,
+  busy,
+}: {
+  title: string;
+  summary: string;
+  onRefresh?: () => void;
+  busy?: boolean;
+}) {
+  return (
+    <div className="muse-toolbar">
+      <div className="muse-toolbar-copy">
+        <div className="muse-toolbar-title">{title}</div>
+        <div className="muse-muted">{summary}</div>
+      </div>
+      {onRefresh ? (
+        <button type="button" className="muse-btn" disabled={busy} onClick={onRefresh}>
+          {t("refresh")}
+        </button>
+      ) : null}
+    </div>
+  );
+}
+
 function MuseSettings() {
+  useLocale();
   const nav = useBbNavigate();
   const { hosts, error, busy, load } = useMuseHosts();
   const summary =
@@ -339,40 +488,46 @@ function MuseSettings() {
   );
 }
 
-function PanelNav({ page }: { page: PanelPage }) {
+function SideNav({ page, hosts }: { page: PanelPage; hosts: HostEntry[] | null }) {
   const nav = useBbNavigate();
   const go = (subPath: PanelPage) => nav.toPluginPanel("muse", { subPath });
-  const items: Array<{ id: PanelPage; label: string }> = [
-    { id: "", label: t("navAccounts") },
-    { id: "machines", label: t("navMachines") },
+  const accounts = hosts ? uniqueAccountCount(hosts) : 0;
+  const machines = hosts ? connectedMachineCount(hosts) : 0;
+  const items: Array<{ id: PanelPage; label: string; count?: number }> = [
+    { id: "", label: t("navAccounts"), count: accounts },
+    { id: "machines", label: t("navMachines"), count: machines },
     { id: "add", label: t("navAdd") },
   ];
   return (
-    <div className="muse-nav">
+    <nav className="muse-sidenav" role="tablist" aria-orientation="vertical">
       {items.map((item) => (
         <button
           key={item.id || "accounts"}
           type="button"
-          className="muse-btn muse-nav-btn"
-          aria-current={page === item.id ? "page" : undefined}
+          className="muse-sidenav-btn"
+          role="tab"
+          aria-selected={page === item.id}
           onClick={() => go(item.id)}
         >
-          {item.label}
+          <span>{item.label}</span>
+          {item.count != null ? <span className="muse-badge">{String(item.count)}</span> : null}
         </button>
       ))}
-    </div>
+    </nav>
   );
 }
 
 function AccountsPage({
   hosts,
   busy,
+  onRefreshHosts,
   onCheck,
   onSync,
   onRemove,
 }: {
   hosts: HostEntry[];
   busy: boolean;
+  onRefreshHosts: () => void;
   onCheck: (hostId: string, id: string) => void;
   onSync: (hostId: string, id: string) => void;
   onRemove: (hostId: string, id: string, purge: boolean) => void;
@@ -386,14 +541,32 @@ function AccountsPage({
         setRows(r.accounts);
         setUsageError(null);
       },
-      (e) => setUsageError(e instanceof Error ? e.message : String(e)),
+      (e) => {
+        setRows([]);
+        setUsageError(e instanceof Error ? e.message : String(e));
+      },
     );
   }, [rpc]);
   useEffect(() => loadUsage(), [loadUsage]);
   const accounts = useMemo(() => mergedAccounts(hosts), [hosts]);
   const byId = useMemo(() => new Map((rows ?? []).map((r) => [r.id, r])), [rows]);
+  const loading = rows === null;
+  const summary = t("summaryAccounts", {
+    accounts: String(uniqueAccountCount(hosts)),
+    machines: String(hosts.length),
+  });
   return (
-    <div className="muse-stack">
+    <>
+      <Toolbar
+        title={t("pageAccountsTitle")}
+        summary={summary}
+        busy={busy}
+        onRefresh={() => {
+          setRows(null);
+          onRefreshHosts();
+          loadUsage();
+        }}
+      />
       {usageError ? (
         <div className="muse-error">
           {t("error")}: {usageError}
@@ -405,18 +578,15 @@ function AccountsPage({
           key={account.id}
           account={account}
           usage={byId.get(account.id)}
+          loading={loading}
           busy={busy}
           onCheck={onCheck}
           onSync={onSync}
           onRemove={onRemove}
+          onRetry={loadUsage}
         />
       ))}
-      <div>
-        <button type="button" className="muse-btn" disabled={busy} onClick={loadUsage}>
-          {t("refreshLimits")}
-        </button>
-      </div>
-    </div>
+    </>
   );
 }
 
@@ -424,18 +594,29 @@ function MachinesPage({
   hosts,
   busy,
   onInstall,
+  onRefresh,
 }: {
   hosts: HostEntry[];
   busy: boolean;
   onInstall: (hostId: string) => void;
+  onRefresh: () => void;
 }) {
   return (
-    <div className="muse-stack">
+    <>
+      <Toolbar
+        title={t("pageMachinesTitle")}
+        summary={t("summaryAccounts", {
+          accounts: String(uniqueAccountCount(hosts)),
+          machines: String(hosts.length),
+        })}
+        busy={busy}
+        onRefresh={onRefresh}
+      />
       {hosts.map((h) => (
         <MachineCard key={h.hostId} h={h} busy={busy} onInstall={onInstall} />
       ))}
       {hosts.length === 0 ? <div className="muse-muted">{t("hostOffline")}</div> : null}
-    </div>
+    </>
   );
 }
 
@@ -458,136 +639,150 @@ function AddAccountPage({
   const [label, setLabel] = useState("");
   const selected = hosts.find((h) => h.hostId === hostId);
   const adding = addingHostId !== null;
+  const optionLabel = (h: HostEntry) =>
+    !h.connected || !h.status?.chromeFound ? `${h.name} — ${t("chromeRequired")}` : h.name;
   return (
-    <div className="muse-stack">
-      <div className="muse-steps">
-        <div>{t("addStep1")}</div>
-        <div>{t("addStep2")}</div>
-        <div>{t("addStep3")}</div>
-      </div>
-      {adding ? (
-        <div className="muse-progress">
-          <span className="muse-spinner" aria-hidden="true" />
-          <span>{t("addInProgress", { name: selected?.name ?? hostId })}</span>
-        </div>
-      ) : (
-        <>
-          <label className="muse-row">
-            <span className="muse-row-label">{t("pickMachine")}</span>
-            <select
-              className="muse-input"
-              value={hostId}
-              disabled={busy}
-              onChange={(e) => setHostId(e.target.value)}
-            >
-              {hosts.map((h) => (
-                <option key={h.hostId} value={h.hostId} disabled={!h.connected || !h.status?.chromeFound}>
-                  {h.name}
-                  {!h.status?.chromeFound ? ` — ${t("chromeRequired")}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-          {!selected?.status?.chromeFound ? (
-            <p className="muse-muted">{t("noChromeOnHost", { names: chromeMachineNames(hosts) })}</p>
-          ) : null}
-          <div className="muse-actions">
-            <input
-              className="muse-input"
-              value={label}
-              disabled={busy}
-              placeholder={t("labelPlaceholder")}
-              onChange={(e) => setLabel(e.target.value)}
-            />
-            <button
-              type="button"
-              className="muse-btn muse-btn-accent"
-              disabled={busy || !label.trim() || !selected?.status?.chromeFound}
-              onClick={() => {
-                const next = label.trim();
-                if (!next || !hostId) return;
-                onAdd(hostId, next);
-                setLabel("");
-              }}
-            >
-              {t("addAccount")}
-            </button>
+    <>
+      <Toolbar
+        title={t("pageAddTitle")}
+        summary={t("summaryAccounts", {
+          accounts: String(uniqueAccountCount(hosts)),
+          machines: String(hosts.length),
+        })}
+      />
+      <div className="muse-card">
+        {adding ? (
+          <div className="muse-progress">
+            <span className="muse-spinner" aria-hidden="true" />
+            <span>{t("addInProgress", { name: selected?.name ?? hostId })}</span>
           </div>
-        </>
-      )}
-      {notice ? <div className={notice.kind === "ok" ? "muse-ok" : "muse-error"}>{notice.text}</div> : null}
-      {notice?.kind === "ok" ? (
-        <button type="button" className="muse-btn" onClick={() => nav.toPluginPanel("muse", { subPath: "" })}>
-          {t("goToAccounts")}
-        </button>
-      ) : null}
-    </div>
+        ) : (
+          <>
+            <label className="muse-row">
+              <span className="muse-row-label">{t("pickMachine")}</span>
+              <select
+                className="muse-input"
+                value={hostId}
+                disabled={busy}
+                onChange={(e) => setHostId(e.target.value)}
+              >
+                {hosts.map((h) => (
+                  <option key={h.hostId} value={h.hostId} disabled={!h.connected || !h.status?.chromeFound}>
+                    {optionLabel(h)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {!selected?.status?.chromeFound ? (
+              <p className="muse-muted">{t("noChromeOnHost", { names: chromeMachineNames(hosts) })}</p>
+            ) : null}
+            <div className="muse-actions">
+              <input
+                className="muse-input"
+                value={label}
+                disabled={busy}
+                placeholder={t("labelPlaceholder")}
+                onChange={(e) => setLabel(e.target.value)}
+              />
+              <button
+                type="button"
+                className="muse-btn muse-btn-accent"
+                disabled={busy || !label.trim() || !selected?.status?.chromeFound}
+                onClick={() => {
+                  const next = label.trim();
+                  if (!next || !hostId) return;
+                  onAdd(hostId, next);
+                  setLabel("");
+                }}
+              >
+                {t("addAccount")}
+              </button>
+            </div>
+          </>
+        )}
+        <ol className="muse-steps">
+          <li>{t("addStep1")}</li>
+          <li>{t("addStep2")}</li>
+          <li>{t("addStep3")}</li>
+        </ol>
+        {notice ? <div className={notice.kind === "ok" ? "muse-ok" : "muse-error"}>{notice.text}</div> : null}
+        {notice?.kind === "ok" ? (
+          <button type="button" className="muse-btn" onClick={() => nav.toPluginPanel("muse", { subPath: "" })}>
+            {t("goToAccounts")}
+          </button>
+        ) : null}
+      </div>
+    </>
   );
 }
 
 function MusePanel({ subPath }: { subPath: string }) {
+  useLocale();
   const page: PanelPage = subPath === "machines" || subPath === "add" ? subPath : "";
   const { rpc, hosts, error, busy, setBusy, addingHostId, setAddingHostId, notice, setNotice, mergeHosts, load, run } =
     useMuseHosts();
   return (
-    <div className="muse-stack" data-bb-plugin="muse">
-      <PanelNav page={page} />
-      {error ? (
-        <div className="muse-error">
-          {t("error")}: {error}
-        </div>
-      ) : null}
-      {hosts === null ? <div className="muse-muted">{t("loading")}</div> : null}
-      {hosts && page === "" ? (
-        <AccountsPage
-          hosts={hosts}
-          busy={busy}
-          onCheck={(hostId, id) => run(() => rpc.call("checkAccounts", { hostId, id }), hostId)}
-          onSync={(hostId, id) => run(() => rpc.call("syncAccounts", { hostId, id }), hostId)}
-          onRemove={(hostId, id, purge) => run(() => rpc.call("removeAccount", { hostId, id, purge }), hostId)}
-        />
-      ) : null}
-      {hosts && page === "machines" ? (
-        <MachinesPage hosts={hosts} busy={busy} onInstall={(hostId) => run(() => rpc.call("installRuntime", { hostId }), hostId)} />
-      ) : null}
-      {hosts && page === "add" ? (
-        <AddAccountPage
-          hosts={hosts}
-          busy={busy}
-          addingHostId={addingHostId}
-          notice={notice}
-          onAdd={(hostId, label) => {
-            setAddingHostId(hostId);
-            setNotice(null);
-            setBusy(true);
-            rpc.call("addAccount", { hostId, label }).then(
-              (r) => {
-                mergeHosts(r.hosts, hostId);
-                setNotice({
-                  kind: "ok",
-                  text: addSuccessText(
-                    label,
-                    r.synced,
-                    hosts.map((entry) => r.hosts.find((n) => n.hostId === entry.hostId) ?? entry),
-                  ),
-                });
-                setAddingHostId(null);
-                setBusy(false);
-              },
-              (e) => {
-                setNotice({ kind: "err", text: e instanceof Error ? e.message : String(e) });
-                setAddingHostId(null);
-                setBusy(false);
-              },
-            );
-          }}
-        />
-      ) : null}
-      <div>
-        <button type="button" className="muse-btn" disabled={busy} onClick={load}>
-          {t("refresh")}
-        </button>
-      </div>
+    <div className="muse-layout" data-bb-plugin="muse">
+      <SideNav page={page} hosts={hosts} />
+      <section className="muse-workspace">
+        {error ? (
+          <div className="muse-error">
+            {t("error")}: {error}
+          </div>
+        ) : null}
+        {hosts === null ? <div className="muse-muted">{t("loading")}</div> : null}
+        {hosts && page === "" ? (
+          <AccountsPage
+            hosts={hosts}
+            busy={busy}
+            onRefreshHosts={load}
+            onCheck={(hostId, id) => run(() => rpc.call("checkAccounts", { hostId, id }), hostId)}
+            onSync={(hostId, id) => run(() => rpc.call("syncAccounts", { hostId, id }), hostId)}
+            onRemove={(hostId, id, purge) => run(() => rpc.call("removeAccount", { hostId, id, purge }), hostId)}
+          />
+        ) : null}
+        {hosts && page === "machines" ? (
+          <MachinesPage
+            hosts={hosts}
+            busy={busy}
+            onRefresh={load}
+            onInstall={(hostId) => run(() => rpc.call("installRuntime", { hostId }), hostId)}
+          />
+        ) : null}
+        {hosts && page === "add" ? (
+          <AddAccountPage
+            hosts={hosts}
+            busy={busy}
+            addingHostId={addingHostId}
+            notice={notice}
+            onAdd={(hostId, label) => {
+              setAddingHostId(hostId);
+              setNotice(null);
+              setBusy(true);
+              rpc.call("addAccount", { hostId, label }).then(
+                (r) => {
+                  mergeHosts(r.hosts, hostId);
+                  setNotice({
+                    kind: "ok",
+                    text: addSuccessText(
+                      label,
+                      r.synced,
+                      hosts.map((entry) => r.hosts.find((n) => n.hostId === entry.hostId) ?? entry),
+                    ),
+                  });
+                  setAddingHostId(null);
+                  setBusy(false);
+                },
+                (e) => {
+                  setNotice({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+                  setAddingHostId(null);
+                  setBusy(false);
+                },
+              );
+            }}
+          />
+        ) : null}
+      </section>
     </div>
   );
 }
