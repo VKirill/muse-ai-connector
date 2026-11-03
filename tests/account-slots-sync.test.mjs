@@ -75,11 +75,10 @@ test("syncAcrossHosts passes maxParallel from exportAccount to importAccount", a
   assert.equal(res[0].ok, true);
 });
 
-test("version 0.3.8 in package.json, package-lock.json and version.ts", () => {
+test("package.json, package-lock.json and version.ts match PLUGIN_VERSION", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
-  assert.equal(pkg.version, "0.3.8");
-  assert.equal(lock.version, "0.3.8");
-  assert.equal(lock.packages[""].version, "0.3.8");
-  assert.equal(PLUGIN_VERSION, "0.3.8");
+  assert.equal(pkg.version, PLUGIN_VERSION);
+  assert.equal(lock.version, PLUGIN_VERSION);
+  assert.equal(lock.packages[""].version, PLUGIN_VERSION);
 });

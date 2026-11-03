@@ -32,14 +32,15 @@ function withHome(fn, { maxParallelEnv } = {}) {
   }
 }
 
-test("with no maxParallel and no MUSE_MAX_PARALLEL one account takes one prompt", () => {
+test("with no maxParallel and no MUSE_MAX_PARALLEL one account takes ten prompts", () => {
   withHome(() => {
     const account = addAccount("Solo");
-    const release = acquire(account.id, { owner: "first" });
-    assert.throws(() => acquire(account.id, { owner: "second" }), (err) => err.code === "account_locked");
-    release();
-    const again = acquire(account.id, { owner: "third" });
+    const releases = Array.from({ length: 10 }, (_, n) => acquire(account.id, { owner: `slot-${n}` }));
+    assert.throws(() => acquire(account.id, { owner: "overflow" }), (err) => err.code === "account_locked");
+    releases[0]();
+    const again = acquire(account.id, { owner: "reacquired" });
     again();
+    for (const release of releases.slice(1)) release();
   });
 });
 
