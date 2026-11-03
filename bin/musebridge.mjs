@@ -10,6 +10,8 @@ import {
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
+import { saveCookies } from "../bridge/cookies.mjs";
+import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { chromeExecutable, openSession } from "../bridge/session.mjs";
 import { profileDir } from "../bridge/paths.mjs";
 
@@ -17,11 +19,11 @@ const HELP = `Usage: musebridge <command>
 
 Commands:
   doctor [--account <id>]   Check Chrome, the profile directory, and sign-in
-  chats [--account <id>] [--json]
+  chats [--account <id>] [--transport api|browser] [--json]
                             List side chats
-  history [--account <id>] <chatId> [--json]
+  history [--account <id>] [--transport api|browser] <chatId> [--json]
                             Show a chat transcript
-  send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>
+  send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
                             Send a message and print the reply
   approve [--account <id>] --chat <id>
                             Answer pending approval cards (Always allow;
@@ -31,6 +33,7 @@ Commands:
   accounts remove <id> [--purge]
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
+  accounts refresh <id>     Export cookies from the signed-in Chrome profile
   login                     Sign in (adds account default when none exist)
   --help                    Show this help
 `;
@@ -63,6 +66,31 @@ function resolveAccountId(flag) {
 
 async function withSession(opts, fn) {
   const session = await openSession(opts);
+  try {
+    return await fn(session);
+  } finally {
+    await session.close();
+  }
+}
+
+async function exportAccountCookies(session, accountId) {
+  if (typeof session.exportCookies !== "function") return;
+  try {
+    saveCookies(accountId, await session.exportCookies());
+  } catch {
+    process.stderr.write("Could not export cookies; API transport will fall back to browser.\n");
+  }
+}
+
+async function withTransport(opts, fn) {
+  const transport = resolveTransport({ flag: opts.transport, env: process.env });
+  const session = await openTransport({
+    accountId: opts.accountId,
+    transport,
+    drivers: {
+      openSession: (openOpts) => openSession({ ...openOpts, headless: opts.headless }),
+    },
+  });
   try {
     return await fn(session);
   } finally {
@@ -117,7 +145,8 @@ async function cmdDoctor(args) {
 async function cmdChats(args) {
   const asJson = takeFlag(args, "--json");
   const accountId = resolveAccountId(takeOption(args, "--account"));
-  await withSession({ accountId, headless: true }, async (session) => {
+  const transport = takeOption(args, "--transport");
+  await withTransport({ accountId, transport, headless: true }, async (session) => {
     await requireSignedIn(session, accountId);
     const chats = await session.listChats();
     if (asJson) {
@@ -133,12 +162,13 @@ async function cmdChats(args) {
 async function cmdHistory(args) {
   const asJson = takeFlag(args, "--json");
   const accountId = resolveAccountId(takeOption(args, "--account"));
+  const transport = takeOption(args, "--transport");
   const chatId = args[0];
   if (!chatId) {
-    process.stderr.write("Usage: musebridge history [--account <id>] <chatId> [--json]\n");
+    process.stderr.write("Usage: musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]\n");
     process.exit(1);
   }
-  await withSession({ accountId, headless: true }, async (session) => {
+  await withTransport({ accountId, transport, headless: true }, async (session) => {
     await requireSignedIn(session, accountId);
     const parsed = await session.history(chatId);
     if (asJson) {
@@ -157,9 +187,10 @@ async function cmdSend(args) {
   const chatId = takeOption(args, "--chat");
   const timeoutSec = takeOption(args, "--timeout");
   const accountFlag = takeOption(args, "--account");
+  const transport = takeOption(args, "--transport");
   const text = args.join(" ").trim();
   if (!text) {
-    process.stderr.write("Usage: musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>\n");
+    process.stderr.write("Usage: musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>\n");
     process.exit(1);
   }
   const timeoutMs = timeoutSec ? Math.max(1, Number(timeoutSec)) * 1000 : undefined;
@@ -171,7 +202,7 @@ async function cmdSend(args) {
   const release = acquire(accountId, { owner: "musebridge-send" });
   try {
     touch(accountId);
-    await withSession({ accountId, headless: !headed }, async (session) => {
+    await withTransport({ accountId, transport, headless: !headed }, async (session) => {
       await requireSignedIn(session, accountId);
       const result = await session.send({
         chatId: chatId || undefined,
@@ -237,6 +268,7 @@ async function cmdAccountsAdd(args) {
       process.stderr.write("Timed out waiting for Muse sign-in.\n");
       process.exit(2);
     }
+    await exportAccountCookies(session, account.id);
     process.stdout.write(`Signed in as ${account.id}.\n`);
   });
 }
@@ -284,6 +316,19 @@ async function cmdAccountsCheck(args) {
   }
 }
 
+async function cmdAccountsRefresh(args) {
+  const id = args[0];
+  if (!id) {
+    process.stderr.write("Usage: musebridge accounts refresh <id>\n");
+    process.exit(1);
+  }
+  await withSession({ accountId: id, headless: true }, async (session) => {
+    await requireSignedIn(session, id);
+    await exportAccountCookies(session, id);
+    process.stdout.write(`Refreshed cookies for ${id}.\n`);
+  });
+}
+
 async function cmdAccounts(args) {
   const sub = args.shift();
   switch (sub) {
@@ -299,8 +344,11 @@ async function cmdAccounts(args) {
     case "check":
       await cmdAccountsCheck(args);
       break;
+    case "refresh":
+      await cmdAccountsRefresh(args);
+      break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check\n");
+      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh\n");
       process.exit(1);
   }
 }
@@ -320,6 +368,7 @@ async function cmdLogin() {
       process.stderr.write("Timed out waiting for Muse sign-in.\n");
       process.exit(2);
     }
+    await exportAccountCookies(session, accountId);
     process.stdout.write("Signed in.\n");
   });
 }
