@@ -7,7 +7,7 @@ import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { extractBbContext, promptText } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
-import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
+import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { readJson, updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 import { createMuseClient, resolveTransport } from "../bridge/protocol/api.mjs";
@@ -20,6 +20,9 @@ const HEADLESS = process.env.MUSE_HEADLESS !== "0" && process.env.MUSE_HEADLESS 
 const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC || 180)) * 1000;
 const PENDING_WAIT_MS = Math.max(0, Number(process.env.MUSE_PENDING_WAIT_MS || 30_000));
 const MAX_TOOL_ROUNDS = Math.max(1, Number(process.env.MUSE_MAX_TOOL_ROUNDS || 60));
+const MAX_BLOCKLESS_REPLIES = 2;
+const NUDGE_MESSAGE =
+  "Your last reply had no muse-tool block and no [[done]] line. If you meant to use a tool, send the block now; if you are finished, repeat your final answer ending with [[done]].";
 const CLIENT_REQUEST_TIMEOUT_MS = 60_000;
 const DUMP_PROMPT_FILE = process.env.MUSE_ACP_DUMP_PROMPT || "";
 const MUSE_MODEL_ID = "muse-spark";
@@ -261,7 +264,8 @@ async function streamPendingReply(session, driver, pending) {
   try {
     const full = await waitForPendingReply(driver.history, pending.chatId, { timeoutMs: PENDING_WAIT_MS, pollMs: 500 });
     const rest = full.startsWith(pending.deliveredPrefix) ? full.slice(pending.deliveredPrefix.length) : full;
-    const visible = rest.replace(/```muse-tool[ \t]*\r?\n?[\s\S]*?```/g, "").trim();
+    const cleaned = rest.replace(/```muse-tool[ \t]*\r?\n?[\s\S]*?```/g, "");
+    const visible = (stripDoneMarker(cleaned) ?? cleaned).trim();
     if (!visible) return;
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${visible}\n\n` } });
   } catch {
@@ -329,6 +333,7 @@ async function runPrompt(session, params) {
           : `${buildIntro(ctx.cwd, [...mcpIndex.keys()])}\n\n${contextSection}${text}`;
         session.lastBbContext = bbContext;
         let rounds = 0;
+        let blockless = 0;
         for (;;) {
           if (session.cancelled) return { stopReason: "cancelled" };
           sendInFlight = true;
@@ -348,12 +353,32 @@ async function runPrompt(session, params) {
           saveSession(session);
           const call = parseToolCall(result.text);
           if (call.kind === "none") {
-            streamed += call.text;
-            update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: call.text } });
+            const done = stripDoneMarker(call.text);
+            if (done === null) {
+              blockless += 1;
+              if (blockless < MAX_BLOCKLESS_REPLIES) {
+                update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: call.text } });
+                rounds += 1;
+                if (rounds >= MAX_TOOL_ROUNDS) {
+                  update(session.id, {
+                    sessionUpdate: "agent_message_chunk",
+                    content: { type: "text", text: `Stopped: Muse hit the tool round limit (MUSE_MAX_TOOL_ROUNDS=${MAX_TOOL_ROUNDS}).` },
+                  });
+                  return { stopReason: "end_turn" };
+                }
+                toSend = NUDGE_MESSAGE;
+                continue;
+              }
+            }
+            const final = done ?? call.text;
+            streamed += final;
+            update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: final } });
             return { stopReason: "end_turn" };
           }
-          if (call.thought) {
-            update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: call.thought } });
+          blockless = 0;
+          const thought = stripDoneMarker(call.thought) ?? call.thought;
+          if (thought) {
+            update(session.id, { sessionUpdate: "agent_thought_chunk", content: { type: "text", text: thought } });
           }
           const toolCallId = `muse-tool-${++toolCallSeq}`;
           update(session.id, {

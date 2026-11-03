@@ -170,7 +170,9 @@ test("extractBbContext returns an empty string without a system_instructions blo
 test("first Muse message carries kept BB rules after the intro; repeats only when they change", async () => {
   const home = seedHome();
   const sent = path.join(home, "sent.jsonl");
-  const agent = startAgent({ MUSE_BRIDGE_FAKE: "1", MUSE_BRIDGE_HOME: home, MUSE_BRIDGE_FAKE_SENT: sent });
+  const script = path.join(home, "script.json");
+  fs.writeFileSync(script, JSON.stringify(["ok\n[[done]]", "ok\n[[done]]", "ok\n[[done]]"]));
+  const agent = startAgent({ MUSE_BRIDGE_FAKE: "1", MUSE_BRIDGE_HOME: home, MUSE_BRIDGE_FAKE_SENT: sent, MUSE_BRIDGE_FAKE_SCRIPT: script });
   const sys = (rule) =>
     `<system_instructions>\nContents of /p/AGENTS.md (project instructions, checked into the codebase):\n${rule}\n` +
     'The following instructions come from the BB plugin "memory":\nMEMORY-INDEX noise\n</system_instructions>\n';

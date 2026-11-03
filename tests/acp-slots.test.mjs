@@ -72,11 +72,14 @@ function seedHome() {
 
 test("two sessions of one account run two prompts in parallel within the slot budget", async () => {
   const home = seedHome();
+  const script = path.join(home, "script.json");
+  fs.writeFileSync(script, JSON.stringify(["ok\n[[done]]", "ok\n[[done]]"]));
   const agent = startAgent({
     MUSE_BRIDGE_FAKE: "1",
     MUSE_BRIDGE_HOME: home,
     MUSE_MAX_PARALLEL: "2",
     MUSE_BRIDGE_FAKE_DELAY_MS: "1500",
+    MUSE_BRIDGE_FAKE_SCRIPT: script,
   });
   try {
     await agent.request("initialize", { protocolVersion: 1, clientCapabilities: {} });

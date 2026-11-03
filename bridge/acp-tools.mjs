@@ -112,6 +112,19 @@ export function parseToolCall(reply) {
   return { kind: "call", name, args, thought };
 }
 
+const DONE_LINE_RE = /^[ \t]*\*{0,2}\[\[done\]\]\*{0,2}[ \t]*$/i;
+
+/**
+ * The final-answer marker: if the reply ends with a [[done]] line, returns the
+ * text with that line stripped; otherwise null.
+ */
+export function stripDoneMarker(reply) {
+  const trimmed = String(reply ?? "").replace(/\s+$/, "");
+  const nl = trimmed.lastIndexOf("\n");
+  if (!DONE_LINE_RE.test(trimmed.slice(nl + 1))) return null;
+  return trimmed.slice(0, nl + 1).replace(/\s+$/, "");
+}
+
 export function resultMessage(name, ok, output) {
   return `TOOL RESULT ${name} (${ok ? "ok" : "error"}):\n${output}`;
 }
@@ -162,7 +175,9 @@ The bridge runs the tool and sends you the next message in this chat:
 TOOL RESULT <name> (ok|error):
 <output>
 
-Then continue. A reply with no muse-tool block is your final answer to the user.
+Then continue. When you have finished and this is your final answer to the user, end it
+with a line containing only [[done]]. A reply with neither a muse-tool block nor [[done]]
+is treated as unfinished.
 Text before the block is shown to the user as your thought — keep it short.
 
 Tools (paths are relative to the workspace; absolute paths inside it also work):

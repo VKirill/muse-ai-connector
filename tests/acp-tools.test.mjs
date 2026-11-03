@@ -150,7 +150,7 @@ test("tool loop: write_file then bash run in the session cwd, final reply stream
     JSON.stringify([
       `I will write the file.\n${block({ tool: "write_file", args: { path: "hello.txt", content: "hi from muse\n" } })}`,
       block({ tool: "bash", args: { command: "cat hello.txt" } }),
-      "All done: hi from muse",
+      "All done: hi from muse\n[[done]]",
     ]),
   );
   const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
@@ -183,7 +183,7 @@ test("bad JSON block goes back to Muse as TOOL RESULT (error)", async () => {
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
   const sent = path.join(home, "sent.jsonl");
-  fs.writeFileSync(script, JSON.stringify(["```muse-tool\n{bad json}\n```", "sorry"]));
+  fs.writeFileSync(script, JSON.stringify(["```muse-tool\n{bad json}\n```", "sorry\n[[done]]"]));
   const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
   try {
     await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
@@ -203,7 +203,7 @@ test("client that announced fs.writeTextFile receives fs/write_text_file instead
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-ws-");
   const script = path.join(home, "script.json");
-  fs.writeFileSync(script, JSON.stringify([block({ tool: "write_file", args: { path: "via-bb.txt", content: "through client\n" } }), "done"]));
+  fs.writeFileSync(script, JSON.stringify([block({ tool: "write_file", args: { path: "via-bb.txt", content: "through client\n" } }), "done\n[[done]]"]));
   const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script });
   try {
     await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } } });
@@ -233,6 +233,91 @@ test("the loop stops at MUSE_MAX_TOOL_ROUNDS with a message", async () => {
     assert.equal(result.stopReason, "end_turn");
     assert.equal(agent.updates.filter((u) => u.sessionUpdate === "tool_call").length, 2);
     assert.match(chunkText(agent.updates), /tool round limit/);
+  } finally {
+    agent.close();
+  }
+});
+
+test("a block-less reply gets one nudge; the second block-less reply ends the turn", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(script, JSON.stringify(["Читаю math.js.", "final words without a marker"]));
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const sentLines = fs
+      .readFileSync(sent, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 2);
+    assert.match(sentLines[1], /no \[\[done\]\] line/);
+    assert.equal(chunkText(agent.updates), "final words without a marker");
+    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.");
+  } finally {
+    agent.close();
+  }
+});
+
+test("a nudge leads to a tool call, then [[done]] ends the turn and is stripped", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(
+    script,
+    JSON.stringify([
+      "Читаю math.js.",
+      `Writing the file.\n${block({ tool: "write_file", args: { path: "hello.txt", content: "hi from muse\n" } })}`,
+      "All done: hi from muse\n[[done]]",
+    ]),
+  );
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "write hello.txt");
+    assert.equal(result.stopReason, "end_turn");
+    assert.equal(fs.readFileSync(path.join(ws, "hello.txt"), "utf8"), "hi from muse\n");
+    const sentLines = fs
+      .readFileSync(sent, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 3);
+    assert.match(sentLines[1], /no \[\[done\]\] line/);
+    assert.match(sentLines[2], /^TOOL RESULT write_file \(ok\):/);
+    assert.equal(chunkText(agent.updates), "All done: hi from muse");
+    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "Читаю math.js.Writing the file.");
+  } finally {
+    agent.close();
+  }
+});
+
+test("'**[[done]]**' on the last line is accepted and stripped", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(script, JSON.stringify(["all good\n**[[done]]**"]));
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const sentLines = fs
+      .readFileSync(sent, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 1);
+    assert.equal(chunkText(agent.updates), "all good");
   } finally {
     agent.close();
   }
