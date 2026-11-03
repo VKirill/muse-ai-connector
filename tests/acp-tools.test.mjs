@@ -5,7 +5,7 @@ import path from "node:path";
 import readline from "node:readline";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { buildIntro, parseToolCall, resolveSessionPath, runTool } from "../bridge/acp-tools.mjs";
+import { buildIntro, parseToolCall, resolveSessionPath, runTool, stripDoneMarker } from "../bridge/acp-tools.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const agentPath = path.join(here, "..", "bin", "muse-acp.mjs");
@@ -326,6 +326,65 @@ test("'**[[done]]**' on the last line is accepted and stripped", async () => {
       .map((l) => JSON.parse(l).text);
     assert.equal(sentLines.length, 1);
     assert.equal(chunkText(agent.updates), "all good");
+  } finally {
+    agent.close();
+  }
+});
+
+test("stripDoneMarker: inline at the end of the last line counts, mid-text does not", () => {
+  assert.equal(stripDoneMarker("All done: hi from muse [[done]]"), "All done: hi from muse");
+  assert.equal(stripDoneMarker("all good\n**[[done]]**"), "all good");
+  assert.equal(stripDoneMarker("final\n[[done]]"), "final");
+  assert.equal(stripDoneMarker("done now [[done]] more"), null);
+  assert.equal(stripDoneMarker("a [[done]] b"), null);
+  assert.equal(stripDoneMarker("plain text"), null);
+});
+
+test("a trailing inline [[done]] ends the turn and is stripped before reaching BB", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(script, JSON.stringify(["All done: hi from muse [[done]]"]));
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const sentLines = fs
+      .readFileSync(sent, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 1);
+    assert.equal(chunkText(agent.updates), "All done: hi from muse");
+  } finally {
+    agent.close();
+  }
+});
+
+test("a [[done]] in mid-text is not a marker and gets the nudge", async () => {
+  const home = seedHome();
+  const ws = fs.mkdtempSync("/tmp/muse-ws-");
+  const script = path.join(home, "script.json");
+  const sent = path.join(home, "sent.jsonl");
+  fs.writeFileSync(script, JSON.stringify(["working on it [[done]] moving on", "real end\n[[done]]"]));
+  const agent = newSession(home, ws, { MUSE_BRIDGE_FAKE_SCRIPT: script, MUSE_BRIDGE_FAKE_SENT: sent });
+  try {
+    await agent.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: {} } });
+    const created = await agent.request("session/new", { cwd: ws, mcpServers: [] });
+    const result = await prompt(agent, created.sessionId, "go");
+    assert.equal(result.stopReason, "end_turn");
+    const sentLines = fs
+      .readFileSync(sent, "utf8")
+      .trim()
+      .split("\n")
+      .map((l) => JSON.parse(l).text);
+    assert.equal(sentLines.length, 2);
+    assert.match(sentLines[1], /no \[\[done\]\] line/);
+    assert.equal(chunkText(agent.updates), "real end");
+    assert.equal(chunkText(agent.updates, "agent_thought_chunk"), "working on it [[done]] moving on");
   } finally {
     agent.close();
   }
