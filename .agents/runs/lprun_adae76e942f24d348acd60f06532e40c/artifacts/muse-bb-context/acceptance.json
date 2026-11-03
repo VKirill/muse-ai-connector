@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-bb-context",
+  "task_sha256": "5a4377b6758b63f0210a29956cb62c650a19356f55425778d2be7dca82c0ce25",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "baa642dc413f6f8aed10d618d58958f6fd7a95b12c6741b04a71f4d4b0bfbabd",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T10:00:44.171Z",
+  "model": "swe-2-high"
+}

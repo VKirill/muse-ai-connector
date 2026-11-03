@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-bb-context",
+  "attemptId": "lpattempt_9818af41e075483e8b2929f44eda6bfd",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_gz8vum52mx",
+  "ownsPaths": [
+    "bridge/acp-prompt.mjs",
+    "bridge/acp-tools.mjs",
+    "bin/muse-acp.mjs",
+    "tests/acp-prompt.test.mjs",
+    "tests/acp-tools.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": "bridge/acp-prompt.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/acp-tools.mjs",
+      "windows": []
+    },
+    {
+      "path": "bin/muse-acp.mjs",
+      "windows": []
+    },
+    {
+      "path": "tests/acp-prompt.test.mjs",
+      "windows": []
+    },
+    {
+      "path": ".agents/plans/muse-agent.md",
+      "windows": []
+    }
+  ],
+  "output": "All green: `check.mjs` prints OK and all 18 tests pass.\n\nChanged files:\n- `bridge/acp-prompt.mjs` — new `extractBbContext(prompt)`: scans `<system_instructions>` blocks, keeps `Contents of … (project instructions / user's private global instructions)` sections, the `Rules the owner taught in this project` list, and `#/## Language` sections; drops plugin manuals, skills catalogues, memory index, reminders and preamble. Output ordered project → owner → language, capped at 16 000 chars with `…(truncated)`. `promptText` unchanged.\n- `bridge/acp-tools.mjs` — `buildIntro` gains two rules: reply in the user's language unless project rules say otherwise; read AGENTS.md/CLAUDE.md before changing files.\n- `bin/muse-acp.mjs` — first message of a Muse chat sends intro + `Project and owner rules (from BB):` + extracted context + user text; later messages resend the context only when it changed (`session.lastBbContext`). `MUSE_ACP_DUMP_PROMPT=<file>` appends each sent message as `{ts, bytes, text}` JSONL and logs `sent <n> bytes` to stderr.\n- `tests/acp-prompt.test.mjs` — marker keep/drop cases, budget ordering/truncation, empty-string cases, and a fake-mode end-to-end test proving the first message carries the rules after the intro, the second doesn't repeat them, and a changed context is resent.\n\n```plan-fact\n[{\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/acp-prompt.mjs:29-78\",\"cmd:node /tmp/muse-sysprompt/check.mjs \\\"$PWD\\\"\"]},{\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/acp-prompt.test.mjs:163-196\",\"bin/muse-acp.mjs:329-335\"]},{\"item\":3,\"status\":\"done\",\"evidence\":[\"cmd:node --test tests/acp-prompt.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs\"]}]\n```\n\nAPPROACH: Split each `<system_instructions>` block into sections at marker lines; bucket kept sections (project instructions → owner rules → language) and drop everything under plugin-manual/skills/memory markers plus preamble. The bridge prepends the kept context once per Muse chat and resends it only when it changes, so Muse follows project/owner rules without the ~184 KB noise.\n\nLESSON: BB's system block is marker-delimited prose, not structured data — line-anchored markers (`Contents of`, `Rules the owner taught`, `# Language`, `The following … come from the BB plugin`) are the reliable seam between signal and manual noise.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-sysprompt/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "4b3e853b429b9b359a608311a1f4c977b0d7748cbe3165554bb592e1b32cbdae",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_9818af41e075483e8b2929f44eda6bfd/muse-ai-connector",
+      "revision": {
+        "head": "d58546d686a363f75ef6e769180112f36425d4cd",
+        "dirty": 4
+      }
+    },
+    {
+      "command": "node --test tests/acp-prompt.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ promptText strips system_instructions and system-reminder blocks, even across blocks (0.921333ms)\r\n✔ promptText keeps plain text and other tags untouched (0.073167ms)\r\n✔ extractBbContext keeps project rules, owner rules and language; drops manuals and noise (0.48575ms)\r\n✔ extractBbContext orders project rules, owner rules, language and truncates at 16000 chars (0.611833ms)\r\n✔ extractBbContext returns an empty string without a system_instructions block (0.072875ms)\r\n✔ first Muse message carries kept BB rules after the intro; repeats only when they change (79.601209ms)\r\n✔ a prompt of only BB system text is answered with a note and Muse is not touched (74.041458ms)\r\n✔ parseToolCall: no block, one block, last block wins (1.371708ms)\r\n✔ parseToolCall: bad JSON is an error, not a crash (0.101333ms)\r\n✔ path guard: ../outside and absolute paths outside cwd are refused (0.418584ms)\r\n✔ edit_file: zero or two matches fails, exactly one applies (3.452416ms)\r\n✔ tool loop: write_file then bash run in the session cwd, final reply streams clean (88.21575ms)\r\n✔ bad JSON block goes back to Muse as TOOL RESULT (error) (79.328333ms)\r\n✔ client that announced fs.writeTextFile receives fs/write_text_file instead of a local write (74.700584ms)\r\n✔ the loop stops at MUSE_MAX_TOOL_ROUNDS with a message (75.575625ms)\r\n✔ fake initialize, session/new, session/prompt streams PONG and ends the turn (77.714208ms)\r\n✔ session/new advertises muse-spark and session/set_model accepts it (72.031334ms)\r\n✔ a second prompt in the same session reuses accountId and Muse chat id from sessions.json (76.574833ms)\r\nℹ tests 18\r\nℹ suites 0\r\nℹ pass 18\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 395.282083\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "c373326a1ca2c470dd748d74ec06aa62a390e8e8aad75459a4ce675e07cb3389",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_9818af41e075483e8b2929f44eda6bfd/muse-ai-connector",
+      "revision": {
+        "head": "d58546d686a363f75ef6e769180112f36425d4cd",
+        "dirty": 4
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "0ed28606cc2704758ad70fa9783bae65ba2cc1b7cb7423486e336f2e2d001236",
+      "sentPlanSha256": null,
+      "sourceLength": 3022,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_9818af41e075483e8b2929f44eda6bfd",
+      "threadId": "thr_gz8vum52mx",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-acp»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T03:35 muse-acp-mcp: muse-acp: MCP servers from session/new and skills as tools. Muse in a BB chat calls the MCP servers BB passes in (bb-bridge, MetaMCP...) and finds and reads skills on demand.\n- 2026-11-03T03:30 muse-acp-tools: muse-acp: local tool loop (files, edit, grep, bash) via muse-tool blocks. Muse in a BB chat reads and edits files in the thread workspace and runs commands through a local tool loop.\n- 2026-11-03T01:12 muse-auto-approve: Muse: auto «Always allow» on approval cards (money excepted), long reply timeout. Muse never stalls on an approval card in a chat the connector drives: it is answered «Always allow» at once, money cards go to the owner.\n- 2026-11-03T00:14 muse-acp-pending-wait: Muse ACP: wait for the interrupted turn's reply before the next prompt. When BB interrupts a Muse turn, the reply Muse goes on writing still reaches BB at the start of the next turn.\n- 2026-11-03T00:04 muse-acp-prompt-fix: Muse ACP: strip BB system instructions, keep one Muse chat and the reply across interrupts. A BB chat on provider Muse sends Muse only the user's words and shows every Muse reply, in one Muse chat per BB thread.\nFiles of this area: bin/muse-acp.mjs, bridge/acp-mcp.mjs, bridge/acp-skills.mjs, bridge/acp-tools.mjs, tests/acp-mcp.test.mjs, tests/acp-skills.test.mjs, tests/fixtures/fake-mcp.mjs, tests/acp-tools.test.mjs, README.md, bench/deepswe/relay.mjs, bin/musebridge.mjs, bridge/permissions.mjs, bridge/session.mjs, tests/bench-relay.test.mjs, tests/cli.test.mjs, tests/fixtures/permission-card.html, tests/permissions.test.mjs, bridge/acp-pending.mjs, tests/acp-pending.test.mjs, bridge/acp-prompt.mjs, tests/acp-cancel.test.mjs, tests/acp-prompt.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.",
+        "rulesPicked": {
+          "total": 16,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- bridge/acp-prompt.mjs L1-L16 (sha256 7566ea26)\n- bridge/acp-tools.mjs L1-L397 (sha256 71f6ab10)\n- bin/muse-acp.mjs L1-L472 (sha256 d7eb7944)",
+        "executionPacketSha256": "f96772d766b431b75fc45b0c768fde84f375543368d7b81a298d894db92c9c4c",
+        "pmReadContext": "{\"summary\":\"This task ('muse-bb-context') aims to adapt BB's injected prompt context so Muse receives workspace and owner rules alongside user language preferences without receiving BB's full system prompt noise. The objective is to extract relevant context (project rules, owner rules, language instructions) while strictly filtering out plugin tool manuals, skills catalogs, memory indices, and system-reminder blocks, enforcing a 16,000-character maximum cap on retained context and ensuring `promptText` returns purely the user prompt. In `bridge/acp-prompt.mjs`, `promptText(prompt)` currently removes all `<system_instructions>` and `<system-reminder>` blocks via regex and trims user text, with no `extractBbContext` implementation currently present. In `bridge/acp-tools.mjs`, `buildIntro` constructs initial agent instructions, tool definitions, and workspace rules within a 7,000-character budget. In `bin/muse-acp.mjs`, ACP sessions are managed, and fake mode enables offline testing through `MUSE_BRIDGE_FAKE` and `MUSE_BRIDGE_FAKE_SENT`, though the excerpt cuts off before prompt handling and dispatch to Muse. The task requires exporting `extractBbContext(prompt)`, supporting `MUSE_ACP_DUMP_PROMPT`, appending extracted rules to the intro only on the first turn of a session, and validating against `/tmp/muse-sysprompt/check.mjs` and test suites.\",\"keyFacts\":[\"In `bridge/acp-prompt.mjs`, `promptText` strips `<system_instructions>` and `<system-reminder>` tags using `SYSTEM_BLOCK_RE` and joins array/string prompts into a single trimmed string.\",\"In `bridge/acp-prompt.mjs`, the required interface `extractBbContext(prompt)` is currently missing.\",\"In `bridge/acp-tools.mjs`, `buildIntro(cwd, mcpToolNames)` formats the initial prompt describing workspace path, tool syntax (fenced `muse-tool` JSON), rules, and attached MCP tools up to `INTRO_BUDGET` (7000 chars).\",\"In `bridge/acp-tools.mjs`, local tools provided to Muse are `read_file`, `write_file`, `edit_file`, `list_dir`, `grep`, `bash`, `tool_schema`, `list_skills`, and `read_skill`.\",\"In `bridge/acp-tools.mjs`, tool execution enforces workspace path boundaries via `resolveSessionPath`, throwing errors on escaping paths.\",\"In `bin/muse-acp.mjs`, sessions are tracked in memory via `sessions = new Map()` and persisted in `sessions.json` with `accountId`, `museChatId`, and `cwd`.\",\"In `bin/muse-acp.mjs`, fake mode (`MUSE_BRIDGE_FAKE === '1'`) simulates Muse responses via `openFakeSession`, logging sent messages to `MUSE_BRIDGE_FAKE_SENT` if configured.\",\"In `bin/muse-acp.mjs`, `promptText` and `buildIntro` are imported, but `extractBbContext` is not yet referenced.\",\"The task contract defines `extractBbContext(prompt) -> string` and `env MUSE_ACP_DUMP_PROMPT` as required interfaces.\",\"Task contract invariants specify that plugin tool manuals, skills catalogue, memory index, and system-reminder blocks must never reach Muse.\",\"Task contract invariants require kept context to be at most 16,000 characters and `promptText` to return only user text.\",\"Task acceptance requires `node /tmp/muse-sysprompt/check.mjs <checkout>` to verify `extractBbContext` keeps `PROJECT-RULE-7`, `OWNER-RULE-3`, and 'plain Russian', while dropping `IMAGE-MANUAL`, `MEMORY-INDEX`, and `REMINDER-NOISE`.\",\"Task acceptance requires tests in `tests/acp-prompt.test.mjs` proving the first message in a session includes kept rules after the intro, while the second message in that session does not repeat them.\",\"Files owned by the task are `bridge/acp-prompt.mjs`, `bridge/acp-tools.mjs`, `bin/muse-acp.mjs`, `tests/acp-prompt.test.mjs`, and `tests/acp-tools.test.mjs`.\"],\"openQuestions\":[\"What does `bin/muse-acp.mjs` do in the remainder of the file after line 472 where prompt handling and dispatch to Muse occur?\",\"How is session state currently tracked in `bin/muse-acp.mjs` to know whether a prompt is the first message or a subsequent turn in an ongoing chat session?\",\"What specific delimiter or structure does BB use inside `<system_instructions>` or `<context>` to demarcate project rules, owner rules, language instructions, tool manuals, and memory index?\",\"What is the exact requirement and format for `MUSE_ACP_DUMP_PROMPT` (e.g., target file path, stdout/stderr logging, or raw prompt dumping)?\",\"What are the existing contents of `tests/acp-prompt.test.mjs` and how are tests currently structured there?\",\"Should `extractBbContext` output be combined into `buildIntro` or appended separately in `bin/muse-acp.mjs` before sending the first message?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 12624,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_ad9fde9429d91a6a",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "warnings": [
+    "the writer changed tests that existed before the attempt (reference tests): tests/acp-prompt.test.mjs — the code critic reviews them in gate mode"
+  ],
+  "turns": 1
+}

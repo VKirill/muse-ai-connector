@@ -5,7 +5,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
-import { promptText } from "../bridge/acp-prompt.mjs";
+import { extractBbContext, promptText } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
 import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
@@ -20,6 +20,7 @@ const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC |
 const PENDING_WAIT_MS = Math.max(0, Number(process.env.MUSE_PENDING_WAIT_MS || 30_000));
 const MAX_TOOL_ROUNDS = Math.max(1, Number(process.env.MUSE_MAX_TOOL_ROUNDS || 60));
 const CLIENT_REQUEST_TIMEOUT_MS = 60_000;
+const DUMP_PROMPT_FILE = process.env.MUSE_ACP_DUMP_PROMPT || "";
 const MUSE_MODEL_ID = "muse-spark";
 const MUSE_MODEL_NAME = "Muse Spark";
 
@@ -129,6 +130,17 @@ function fakeNextReply() {
     return reply;
   }
   return "PONG";
+}
+
+function dumpSent(text) {
+  if (!DUMP_PROMPT_FILE) return;
+  const bytes = Buffer.byteLength(text);
+  process.stderr.write(`sent ${bytes} bytes\n`);
+  try {
+    fs.appendFileSync(DUMP_PROMPT_FILE, `${JSON.stringify({ ts: new Date().toISOString(), bytes, text })}\n`);
+  } catch {
+    /* best effort */
+  }
 }
 
 function fakeLogSent(text) {
@@ -262,6 +274,7 @@ async function streamPendingReply(session, driver, pending) {
 async function runPrompt(session, params) {
   session.cancelled = false;
   const text = promptText(params.prompt);
+  const bbContext = extractBbContext(params.prompt);
   if (!text) {
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Nothing to send to Muse: the message held only BB system instructions." } });
     return { stopReason: "end_turn" };
@@ -311,11 +324,17 @@ async function runPrompt(session, params) {
           callMcp: (name, args) => callMcpTool(mcpIndex, name, args),
           describeMcp: (name) => describeMcpTool(mcpIndex, name),
         };
-        let toSend = session.museChatId ? text : `${buildIntro(ctx.cwd, [...mcpIndex.keys()])}\n\n${text}`;
+        const contextSection =
+          bbContext && bbContext !== session.lastBbContext ? `Project and owner rules (from BB):\n${bbContext}\n\n` : "";
+        let toSend = session.museChatId
+          ? `${contextSection}${text}`
+          : `${buildIntro(ctx.cwd, [...mcpIndex.keys()])}\n\n${contextSection}${text}`;
+        session.lastBbContext = bbContext;
         let rounds = 0;
         for (;;) {
           if (session.cancelled) return { stopReason: "cancelled" };
           sendInFlight = true;
+          dumpSent(toSend);
           const result = await driver.send({
             chatId: session.museChatId || undefined,
             text: toSend,
