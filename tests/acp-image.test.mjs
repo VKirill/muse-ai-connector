@@ -92,11 +92,11 @@ test("muse-image sends a prefixed prompt without the tools intro and returns an 
     assert.equal(sentLines.length, 1);
     assert.equal(sentLines[0], "Create image format: 9:16. кот");
     assert.equal(sentLines[0].includes("muse-tool"), false);
-    const image = agent.updates.find((u) => u.content?.type === "image");
-    assert.equal(image.content.mimeType, "image/webp");
-    assert.equal(image.content.data, Buffer.from("WEBPFAKE").toString("base64"));
+    const image = agent.updates.find((u) => u.content?.type === "image") || { content: {} };
+    assert.equal(image.content.mimeType, undefined);
+    assert.equal(image.content.data, undefined);
     const texts = agent.updates.filter((u) => u.content?.type === "text").map((u) => u.content.text).join("");
-    assert.match(texts, /muse-images\/fake\.webp/);
+    assert.match(texts, /!\[Fake image\]\(muse-images\/fake\.webp\)/);
     assert.equal(fs.readFileSync(path.join(ws, "muse-images", "fake.webp")).toString(), "WEBPFAKE");
   } finally {
     agent.close();
