@@ -78,7 +78,7 @@ test("initialize reports promptCapabilities.image true", async () => {
   }
 });
 
-test("ACP image and pdf go as Muse attachments; markdown is inlined", async () => {
+test("ACP image, pdf and markdown go as Muse attachments", async () => {
   const home = seedHome();
   const ws = fs.mkdtempSync("/tmp/muse-attach-acp-ws-");
   const pdf = path.join(ws, "doc.pdf");
@@ -104,10 +104,12 @@ test("ACP image and pdf go as Muse attachments; markdown is inlined", async () =
     assert.deepEqual(rec.attachments, [
       { type: "image", mime_type: "image/png", filename: "photo.png", bytes: pngBytes.length },
       { type: "file", mime_type: "application/pdf", filename: "doc.pdf", bytes: Buffer.byteLength("%PDF-1.4\n") },
+      { type: "file", mime_type: "text/markdown", filename: "notes.md", bytes: Buffer.byteLength("# Notes\nhello\n") },
     ]);
-    assert.match(rec.text, /\[Attached file: notes.md\]/);
-    assert.match(rec.text, /# Notes\nhello/);
+    assert.match(rec.text, /\[Attached file: doc\.pdf — sent as an attachment\]/);
+    assert.match(rec.text, /\[Attached file: notes\.md — sent as an attachment\]/);
     assert.equal(rec.text.includes("%PDF-1.4"), false);
+    assert.equal(rec.text.includes("# Notes\nhello"), false);
   } finally {
     agent.close();
   }

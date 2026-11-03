@@ -4,7 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
-import { waitForPendingReply } from "../bridge/acp-pending.mjs";
+import { waitForAssistantMessage, waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { collectPrompt, extractBbContext } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
 import { buildIntro, cap, MAX_TOOL_CALLS, MESSAGE_CAP, OUTPUT_CAP, parseToolCalls, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
@@ -23,8 +23,11 @@ const PENDING_WAIT_MS = Math.max(0, Number(process.env.MUSE_PENDING_WAIT_MS || 3
 const MAX_TOOL_ROUNDS = Math.max(1, Number(process.env.MUSE_MAX_TOOL_ROUNDS || 60));
 const MAX_BLOCKLESS_REPLIES = 3;
 const NUDGE_MESSAGE =
-  "Your last reply had no ```muse-tool block. Your own tools (muse.exec, muse.read, …) run on your cloud VM, which cannot see this workspace — nothing happened. To act, end your reply with ```muse-tool blocks (up to 8). If you are finished, repeat your final answer ending with [[done]].";
+  "Your last reply had no ```muse-tool block. muse-tool is not one of your tools — it is a fenced text block you write at the end of your reply; the BB bridge on the user's machine runs it and answers in the next message. Your own tools (muse.exec, muse.read, …) run on your cloud VM, which cannot see this workspace — nothing happened, and web results from your browser.* tools reach the user only through a muse-tool write_file block. To act, end your reply with ```muse-tool blocks (up to 8). If you are finished, repeat your final answer ending with [[done]].";
 const BLOCKLESS_STOP_MESSAGE = "Muse stopped without using a tool; nothing reached the workspace.";
+const EMPTY_REPLY_POLL_MS = 3_000;
+const WORKING_THOUGHT_MESSAGE = "Muse is working with its own tools…";
+const STILL_WORKING_MESSAGE = "Muse is still working on its side; ask it to continue";
 const CLIENT_REQUEST_TIMEOUT_MS = 60_000;
 const DUMP_PROMPT_FILE = process.env.MUSE_ACP_DUMP_PROMPT || "";
 const MUSE_MODEL_ID = "muse-spark";
@@ -130,7 +133,7 @@ function fakeNextReply() {
     if (file) {
       try {
         const arr = JSON.parse(fs.readFileSync(file, "utf8"));
-        if (Array.isArray(arr)) fakeScript = arr.map((v) => String(v));
+        if (Array.isArray(arr)) fakeScript = arr.map((v) => (Array.isArray(v) ? v.map(String) : String(v)));
       } catch (err) {
         process.stderr.write(`MUSE_BRIDGE_FAKE_SCRIPT unreadable: ${err?.message || err}\n`);
       }
@@ -202,13 +205,20 @@ async function openFakeSession() {
       messages.push({ id: `fake-user-${++fakeSeq}`, role: "user", content: text, streaming: false });
       fakeLogSent(text, attachments);
       await sleep(FAKE_DELAY_MS);
-      const replyText = fakeNextReply();
+      const turn = fakeNextReply();
+      const parts = Array.isArray(turn) ? turn : [turn];
+      const replyText = parts[0] ?? "";
       const reply = { id: `fake-assistant-${++fakeSeq}`, role: "assistant", content: replyText, streaming: false };
       if (isCancelled?.()) {
         landFakeReply(messages, reply);
         throw codedError("cancelled", "cancelled");
       }
       messages.push(reply);
+      parts.slice(1).forEach((content, i) => {
+        setTimeout(() => {
+          messages.push({ id: `fake-assistant-${++fakeSeq}`, role: "assistant", content, streaming: false });
+        }, 200 * (i + 1)).unref();
+      });
       onDelta?.(replyText);
       const mediaPath = "workspace/imagine_media/fake.webp";
       const history = {
@@ -473,7 +483,27 @@ async function runPrompt(session, params) {
           sendInFlight = false;
           session.museChatId = result.chatId;
           saveSession(session);
-          const parsed = parseToolCalls(result.text);
+          let replyText = String(result.text ?? "");
+          if (!replyText.trim() && typeof driver.history === "function") {
+            update(session.id, {
+              sessionUpdate: "agent_thought_chunk",
+              content: { type: "text", text: WORKING_THOUGHT_MESSAGE },
+            });
+            replyText = await waitForAssistantMessage(driver.history, result.chatId, {
+              timeoutMs: REPLY_TIMEOUT_MS,
+              pollMs: EMPTY_REPLY_POLL_MS,
+              isCancelled: () => session.cancelled,
+            });
+            if (session.cancelled) return { stopReason: "cancelled" };
+            if (!replyText.trim()) {
+              update(session.id, {
+                sessionUpdate: "agent_message_chunk",
+                content: { type: "text", text: STILL_WORKING_MESSAGE },
+              });
+              return { stopReason: "end_turn" };
+            }
+          }
+          const parsed = parseToolCalls(replyText);
           if (parsed.kind === "none") {
             const done = stripDoneMarker(parsed.text);
             if (done === null) {
