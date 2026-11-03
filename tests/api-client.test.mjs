@@ -7,8 +7,9 @@ import zlib from "node:zlib";
 import { saveCookies } from "../bridge/cookies.mjs";
 import { chatStreamBody, createMuseClient, openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { decodeFrame, encodeResponse } from "../bridge/protocol/envelope.mjs";
-import { bootstrapHttps, buildGatewayUrl, defaultSocketFactory, parseBootstrapFromHtml } from "../bridge/protocol/gateway.mjs";
+import { bootstrapHttps, buildGatewayUrl, connectGateway, defaultSocketFactory, parseBootstrapFromHtml } from "../bridge/protocol/gateway.mjs";
 import { createStreamDecoder } from "../bridge/protocol/ndjson.mjs";
+import { createHandshake } from "../bridge/protocol/noise.mjs";
 
 const flightHtml = fs.readFileSync(
   path.join(path.dirname(fileURLToPath(import.meta.url)), "fixtures", "muse-flight.html"),
@@ -277,4 +278,155 @@ test("createMuseClient send streams deltas through envelope frames and returns c
     assert.ok(gateway.requests.some((r) => r.path === "/chat/stream"));
     await client.close();
   });
+});
+
+test("send resubscribes with the last seen seq values when the subscribe stream dies", async () => {
+  await withHome(async () => {
+    saveCookies("acc1", [
+      {
+        name: "hatch_sess",
+        value: "x",
+        domain: ".muse.ai",
+        path: "/",
+        expires: 2_000_000_000,
+        secure: true,
+      },
+    ]);
+    const subscribeBodies = [];
+    const deltas = [];
+    let streams = 0;
+    const dead = Object.assign(new Error("Muse gateway socket closed"), { code: "gateway_closed" });
+    const gateway = {
+      async request({ path }) {
+        if (path === "/chat/stream") return jsonRes({ session_id: "s1", message_id: "u1" });
+        if (path.startsWith("/chat/history")) {
+          return jsonRes({
+            ok: true,
+            result: {
+              chat_events: [
+                { event_name: "message.user", message_id: "u1", display_text: "hi" },
+                { event_name: "message.assistant", message_id: "a1", display_text: "DONE" },
+              ],
+            },
+          });
+        }
+        return jsonRes({});
+      },
+      async stream(opts, onEvent) {
+        streams += 1;
+        subscribeBodies.push(opts.body);
+        if (streams === 1) {
+          setTimeout(() => {
+            onEvent({ type: "event", event: "text.delta", payload: { delta: "half ", chat_event_seq: 7 }, seq: 42 });
+          }, 0);
+          return { stop() {}, finished: new Promise((_, rej) => setTimeout(() => rej(dead), 20)) };
+        }
+        setTimeout(() => {
+          onEvent({ type: "event", event: "text.delta", payload: { delta: "half ", chat_event_seq: 7 }, seq: 42 });
+          onEvent({ type: "event", event: "task.status", payload: { status: "completed", chat_event_seq: 8 }, seq: 43 });
+          onEvent({ type: "event", event: "agent.status", payload: { activity_code: "idle", chat_event_seq: 9 }, seq: 44 });
+        }, 10);
+        return { stop() {}, finished: new Promise(() => {}) };
+      },
+      onEvent() {},
+      close() {},
+    };
+    const client = await createMuseClient({ accountId: "acc1", gateway });
+    const result = await client.send({ text: "hi", onDelta: (d) => deltas.push(d), timeoutMs: 10_000 });
+    assert.equal(result.text, "DONE");
+    assert.equal(result.messageId, "a1");
+    assert.equal(streams, 2);
+    assert.equal(subscribeBodies[0].after_stream_seq, 0);
+    assert.equal(subscribeBodies[0].after_chat_event_seq, 0);
+    assert.equal(subscribeBodies[1].after_stream_seq, 42);
+    assert.equal(subscribeBodies[1].after_chat_event_seq, 7);
+    assert.deepEqual(deltas, ["half "]);
+    await client.close();
+  });
+});
+
+function fakeGatewaySocket(dieAfterRequests) {
+  const listeners = new Map();
+  const responder = createHandshake({ initiator: false });
+  const ws = {
+    binaryType: "",
+    readyState: 1,
+    sent: 0,
+    requestsSeen: 0,
+    respSend: null,
+    respRecv: null,
+    emit(name, ev) {
+      for (const cb of listeners.get(name) ?? []) cb(ev);
+    },
+    addEventListener(name, cb) {
+      listeners.set(name, [...(listeners.get(name) ?? []), cb]);
+    },
+    removeEventListener(name, cb) {
+      listeners.set(name, (listeners.get(name) ?? []).filter((x) => x !== cb));
+    },
+    send(data) {
+      queueMicrotask(() => {
+        ws.sent += 1;
+        const bytes = new Uint8Array(Buffer.from(data));
+        if (ws.sent === 1) {
+          responder.readMessage(bytes);
+          ws.emit("message", { data: responder.writeMessage() });
+          return;
+        }
+        if (ws.sent === 2) {
+          responder.readMessage(bytes);
+          [ws.respSend, ws.respRecv] = responder.split();
+          return;
+        }
+        ws.requestsSeen += 1;
+        if (ws.requestsSeen === dieAfterRequests) {
+          ws.readyState = 4;
+          ws.emit("close", {});
+          return;
+        }
+        const frame = decodeFrame(ws.respRecv.decrypt(bytes));
+        ws.emit("message", {
+          data: ws.respSend.encrypt(
+            encodeResponse({
+              streamId: frame.request.streamId,
+              status: 200,
+              headers: [["content-type", "application/json"]],
+              chunk: Buffer.from(JSON.stringify({ ok: true })),
+              end: true,
+            }),
+          ),
+        });
+      });
+    },
+    close() {
+      if (ws.readyState === 4) return;
+      ws.readyState = 4;
+      ws.emit("close", {});
+    },
+  };
+  return ws;
+}
+
+test("connectGateway reconnects on each call after the socket dies", async () => {
+  const sockets = [];
+  const dieAfter = [1, 2, Number.POSITIVE_INFINITY];
+  const gw = await connectGateway({
+    cookies: [],
+    fetchImpl: async (url) =>
+      String(url).replace(/\/$/, "") === "https://muse.ai"
+        ? new Response(flightHtml, { status: 200, headers: { "content-type": "text/html" } })
+        : new Response('{"status":"ok"}', { status: 200, headers: { "content-type": "application/json" } }),
+    socketFactory: (url) => {
+      const socket = fakeGatewaySocket(dieAfter[sockets.length] ?? Number.POSITIVE_INFINITY);
+      sockets.push(socket);
+      return socket;
+    },
+  });
+  const first = await gw.request({ method: "GET", path: "/api/ping" });
+  assert.equal(first.status, 200);
+  assert.equal(sockets.length, 2);
+  const second = await gw.request({ method: "GET", path: "/api/ping" });
+  assert.equal(second.status, 200);
+  assert.equal(sockets.length, 3);
+  gw.close();
 });

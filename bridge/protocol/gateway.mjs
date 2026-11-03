@@ -485,7 +485,7 @@ function openTunnel(ws, sendCipher, recvCipher) {
   }
 
   return {
-    closed: () => closed,
+    closed: () => closed || ws.readyState !== 1,
     onEvent(handler) {
       pushHandlers.push(handler);
     },
@@ -566,7 +566,6 @@ async function openSocket(url, socketFactory) {
  * @param {{ cookies: object[], fetchImpl?: typeof fetch, socketFactory?: (url: string) => WebSocket }} opts
  */
 export async function connectGateway({ cookies, fetchImpl, socketFactory } = {}) {
-  let retried = false;
   let tunnel = null;
 
   async function connect() {
@@ -596,8 +595,7 @@ export async function connectGateway({ cookies, fetchImpl, socketFactory } = {})
     try {
       return await fn(tunnel);
     } catch (err) {
-      if (retried || err?.code === "auth_failed") throw err;
-      retried = true;
+      if (err?.code === "auth_failed") throw err;
       tunnel = await reconnect();
       return fn(tunnel);
     }
@@ -616,7 +614,10 @@ export async function connectGateway({ cookies, fetchImpl, socketFactory } = {})
       return withReconnect((t) => t.request(opts));
     },
     stream(opts, onEvent) {
-      return withReconnect((t) => t.stream(opts, onEvent));
+      return withReconnect((t) => {
+        if (t.closed()) throw deadSocketError();
+        return t.stream(opts, onEvent);
+      });
     },
   };
 }
