@@ -23,6 +23,7 @@ import { extractImages, imagePrompt, saveImages } from "../bridge/images.mjs";
 import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { chromeExecutable, openSession } from "../bridge/session.mjs";
 import { addTarget, listTargets, removeTarget, syncAccount, syncAll, syncIfTargets } from "../bridge/sync.mjs";
+import { fetchAccountUsage } from "../bridge/usage.mjs";
 
 const HELP = `Usage: musebridge <command>
 
@@ -47,6 +48,8 @@ Commands:
   accounts remove <id> [--purge]
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
+  accounts usage [<id>] [--json]
+                            Show plan usage for every account or one account
   accounts refresh <id>     Export cookies from the signed-in Chrome profile
   accounts import [<id>] [--label <label>]
                             Import a cookies JSON array or an export object from stdin
@@ -629,6 +632,45 @@ async function cmdAccountsImport(args) {
   process.stdout.write(`imported ${cookies.length} cookies for ${id}\n`);
 }
 
+function usageLine(row) {
+  if (!row.usage) return `${row.id}\t${row.error?.message ?? "usage unavailable"}`;
+  const u = row.usage;
+  const parts = [u.plan ?? "unknown plan"];
+  parts.push(u.percentUsed == null ? "unlimited" : `${u.percentUsed}% used`);
+  if (u.periodLabel) parts.push(u.periodLabel);
+  if (u.extraTokensLeftLabel) parts.push(`extra ${u.extraTokensLeftLabel}`);
+  return `${row.id}\t${parts.join(" · ")}`;
+}
+
+export async function cmdAccountsUsage(args, deps = {}) {
+  const asJson = takeFlag(args, "--json");
+  const id = args[0];
+  const readUsage = deps.fetchAccountUsage ?? fetchAccountUsage;
+  const accounts = listAccounts();
+  const targets = id ? accounts.filter((a) => a.id === id) : accounts;
+  if (id && targets.length === 0) {
+    process.stderr.write(`Unknown account: ${id}\n`);
+    process.exit(1);
+  }
+  const rows = [];
+  for (const account of targets) {
+    const row = { id: account.id, label: account.label, status: account.status, usage: null, error: null };
+    try {
+      row.usage = await readUsage({ accountId: account.id });
+    } catch (err) {
+      row.error = { code: err?.code ?? "usage_unavailable", message: String(err?.message ?? err) };
+    }
+    rows.push(row);
+  }
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ accounts: rows }, null, 2)}\n`);
+    return;
+  }
+  for (const row of rows) {
+    process.stdout.write(`${usageLine(row)}\n`);
+  }
+}
+
 async function cmdSyncTargets(args) {
   const sub = args.shift();
   switch (sub) {
@@ -718,6 +760,9 @@ async function cmdAccounts(args) {
     case "check":
       await cmdAccountsCheck(args);
       break;
+    case "usage":
+      await cmdAccountsUsage(args);
+      break;
     case "refresh":
       await cmdAccountsRefresh(args);
       break;
@@ -731,7 +776,7 @@ async function cmdAccounts(args) {
       await cmdAccountsExport(args);
       break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set|import|export\n");
+      process.stderr.write("Usage: musebridge accounts list|add|remove|check|usage|refresh|set|import|export\n");
       process.exit(1);
   }
 }
