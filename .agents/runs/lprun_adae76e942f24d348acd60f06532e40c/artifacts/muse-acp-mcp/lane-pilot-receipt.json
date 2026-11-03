@@ -1,0 +1,157 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-acp-mcp",
+  "attemptId": "lpattempt_5a207e6b79144133bbfa25a09589c129",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_b4srm8eg4i",
+  "ownsPaths": [
+    "bridge/acp-mcp.mjs",
+    "bridge/acp-skills.mjs",
+    "bridge/acp-tools.mjs",
+    "bin/muse-acp.mjs",
+    "tests/acp-mcp.test.mjs",
+    "tests/acp-skills.test.mjs",
+    "tests/fixtures/"
+  ],
+  "readFirst": [
+    {
+      "path": ".agents/plans/muse-agent.md",
+      "windows": []
+    },
+    {
+      "path": "bin/muse-acp.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/acp-tools.mjs",
+      "windows": []
+    }
+  ],
+  "output": "Done. MCP servers from `session/new` (stdio and streamable-HTTP) now start in parallel at session creation — failures are skipped with a stderr line while the rest work — and their tools appear to Muse as `mcp__<server>__<tool>` in the intro and the tool registry. `tool_schema`, `list_skills`, and `read_skill` are new local tools; skill dirs come from `MUSE_SKILL_DIRS` or the documented defaults. Servers close on `session/close` and process exit; `initialize` now advertises `mcpCapabilities {http: true, sse: false}`.\n\nChanged paths:\n- `bridge/acp-mcp.mjs` (new: stdio + HTTP MCP clients, tool index, call/schema helpers)\n- `bridge/acp-skills.mjs` (new: skill dir scan, front-matter parse, list/read)\n- `bridge/acp-tools.mjs` (tool_schema/list_skills/read_skill dispatch, `mcp__` routing, intro lists MCP names under an 8 KB budget)\n- `bin/muse-acp.mjs` (server startup on session/new, mcpCapabilities, cleanup hooks, ctx wiring)\n- `tests/acp-mcp.test.mjs`, `tests/acp-skills.test.mjs`, `tests/fixtures/fake-mcp.mjs` (new)\n\nVerification: `node /tmp/muse-acp-mcp/check.mjs \"$PWD\"` → OK; `node --test tests/acp-mcp.test.mjs tests/acp-skills.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs` → 19/19 pass (full suite 92/92).\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"bin/muse-acp.mjs\",\"bridge/acp-mcp.mjs\",\"cmd:node /tmp/muse-acp-mcp/check.mjs \\\"$PWD\\\"\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/acp-mcp.test.mjs\",\"tests/fixtures/fake-mcp.mjs\",\"cmd:node --test tests/acp-mcp.test.mjs tests/acp-skills.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs\"]},\n  {\"item\":3,\"status\":\"done\",\"evidence\":[\"cmd:node --test tests/acp-mcp.test.mjs tests/acp-skills.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs\"]}\n]\n```\n\nAPPROACH: each MCP server gets a tiny client exposing `{tools, call, close}` — stdio over newline JSON-RPC with a per-request pending map and 15s start timeout, HTTP over streamable-HTTP POST accepting both `application/json` and SSE `data:` frames and echoing `mcp-session-id`. Server specs stay in memory only (never persisted to sessions.json) so MCP env values can't leak to disk; the env is merged into the child env and never written to logs or Muse messages — covered by a test asserting a sentinel secret never reaches the sent log.\n\nLESSON: `isError` on `tools/call` results is a tool-level failure, not a transport error — it must map to `TOOL RESULT (error)` rather than ok, or Muse can't tell a failed call from a successful one.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-acp-mcp/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "e3daa64263ec231e11a18a9f37a976542b9a8aec0584f0181395c801eb74bb39",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_387edaca792644458778dd71c3ca24de/muse-ai-connector",
+      "revision": {
+        "head": "6b3ccdf68e78dd111861724b47efa52cd5088438",
+        "dirty": 7
+      }
+    },
+    {
+      "command": "node --test tests/acp-mcp.test.mjs tests/acp-skills.test.mjs tests/acp-tools.test.mjs tests/acp.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ stdio MCP server: mcp__fake__echo round-trips through the tool loop (135.347875ms)\r\n✔ http MCP server answers a tools/call over JSON-RPC POST (108.207458ms)\r\nmcp server broken skipped: broken: cannot start /nonexistent-mcp-bin-xyz: spawn /nonexistent-mcp-bin-xyz ENOENT\r\n✔ a server whose command does not exist is skipped while the other works (118.43175ms)\r\n✔ tool_schema returns the MCP tool's input schema (115.16275ms)\r\n✔ skillDirs: MUSE_SKILL_DIRS wins; defaults cover cwd and home (1.19225ms)\r\n✔ listSkills scans front matter and filters by query, capped at 30 (1.081917ms)\r\n✔ readSkill returns the SKILL.md text by name (1.257833ms)\r\n✔ list_skills and read_skill run through the tool loop (88.308791ms)\r\n✔ parseToolCall: no block, one block, last block wins (2.923541ms)\r\n✔ parseToolCall: bad JSON is an error, not a crash (0.126333ms)\r\n✔ path guard: ../outside and absolute paths outside cwd are refused (0.42125ms)\r\n✔ edit_file: zero or two matches fails, exactly one applies (3.623291ms)\r\n✔ tool loop: write_file then bash run in the session cwd, final reply streams clean (94.677875ms)\r\n✔ bad JSON block goes back to Muse as TOOL RESULT (error) (77.169875ms)\r\n✔ client that announced fs.writeTextFile receives fs/write_text_file instead of a local write (74.530083ms)\r\n✔ the loop stops at MUSE_MAX_TOOL_ROUNDS with a message (72.912333ms)\r\n✔ fake initialize, session/new, session/prompt streams PONG and ends the turn (78.993833ms)\r\n✔ session/new advertises muse-spark and session/set_model accepts it (73.121209ms)\r\n✔ a second prompt in the same session reuses accountId and Muse chat id from sessions.json (74.916167ms)\r\nℹ tests 19\r\nℹ suites 0\r\nℹ pass 19\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 574.787791\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "b5c2d343bbd6cb6deac0e4acf9b33a07963f588b872ad6c607b9e3259f53db7f",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_387edaca792644458778dd71c3ca24de/muse-ai-connector",
+      "revision": {
+        "head": "6b3ccdf68e78dd111861724b47efa52cd5088438",
+        "dirty": 7
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "9f831ad74b85474dd11e32e8f370bdd8471a58ed6ed74ff8e891e1e478ae53c8",
+      "sentPlanSha256": null,
+      "sourceLength": 2105,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_5a207e6b79144133bbfa25a09589c129",
+      "threadId": "thr_b4srm8eg4i",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-acp»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T01:12 muse-auto-approve: Muse: auto «Always allow» on approval cards (money excepted), long reply timeout. Muse never stalls on an approval card in a chat the connector drives: it is answered «Always allow» at once, money cards go to the owner.\n- 2026-11-03T00:14 muse-acp-pending-wait: Muse ACP: wait for the interrupted turn's reply before the next prompt. When BB interrupts a Muse turn, the reply Muse goes on writing still reaches BB at the start of the next turn.\n- 2026-11-03T00:04 muse-acp-prompt-fix: Muse ACP: strip BB system instructions, keep one Muse chat and the reply across interrupts. A BB chat on provider Muse sends Muse only the user's words and shows every Muse reply, in one Muse chat per BB thread.\nFiles of this area: README.md, bench/deepswe/relay.mjs, bin/musebridge.mjs, bridge/permissions.mjs, bridge/session.mjs, tests/bench-relay.test.mjs, tests/cli.test.mjs, tests/fixtures/permission-card.html, tests/permissions.test.mjs, bin/muse-acp.mjs, bridge/acp-pending.mjs, tests/acp-pending.test.mjs, bridge/acp-prompt.mjs, tests/acp-cancel.test.mjs, tests/acp-prompt.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.",
+        "rulesPicked": {
+          "total": 15,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- .agents/plans/muse-agent.md L1-L69 (sha256 9cbafb4c)\n- bin/muse-acp.mjs L1-L328 (sha256 9bc5c6fe)\n- bridge/acp-prompt.mjs L1-L16 (sha256 7566ea26)\n- bridge/acp-pending.mjs L1-L31 (sha256 1f8c7c04)\n- tests/acp.test.mjs L1-L150 (sha256 cae144e7)",
+        "executionPacketSha256": "4facd86b29d2a74bc095561449ee620c27a38bb8951aef596af4e7b9b1f7b19f",
+        "pmReadContext": "{\"summary\":\"The task 'muse-acp-tools' expands the Muse ACP agent implementation so that Muse can act as a full coding agent in BB chats, executing local tools (read_file, write_file, edit_file, list_dir, grep, bash) in the session workspace directory via a multi-round tool loop. The design specified in .agents/plans/muse-agent.md relies on a text-based protocol because Muse cannot call tools natively. In this protocol, Muse ends tool-calling turns with a fenced ```muse-tool {\\\"tool\\\": \\\"<name>\\\", \\\"args\\\": {...}} ``` block. muse-acp parses the last block of the reply, sends ACP session/update tool_call and tool_call_update notifications to BB, streams any preceding text as thought chunks (agent_thought_chunk), executes the tool, and feeds the formatted tool result back to the same Muse chat as 'TOOL RESULT <name> (ok|error):\\\\n<output>'. When Muse responds without a tool block, the reply is treated as the final message and streamed as agent_message_chunk with stopReason 'end_turn'.\\n\\nCurrently, bin/muse-acp.mjs implements an ACP server over stdio handling JSON-RPC methods (initialize, session/new, session/set_model, session/prompt, session/close, and session/cancel notification). In session/prompt, it acquires an account lock, opens a driver (real or fake), calls driver.send once, and streams deltas directly to BB as agent_message_chunk. It does not parse tool blocks, does not maintain a tool loop, does not store session cwd or clientCapabilities from initialize/session/new, and does not handle two-way ACP client requests (such as fs/read_text_file and fs/write_text_file). Furthermore, openFakeSession in bin/muse-acp.mjs currently only returns hardcoded 'PONG' responses and does not support the planned MUSE_BRIDGE_FAKE_SCRIPT or MUSE_BRIDGE_FAKE_SENT environments needed for testing tool interactions.\\n\\nKey contractual constraints and invariants include: (1) all file operations must resolve within the session cwd, refusing paths outside cwd; (2) raw muse-tool blocks must never reach agent_message_chunk; (3) when client capabilities announce fs.readTextFile / fs.writeTextFile, file reads and writes must be delegated to ACP client requests (fs/read_text_file and fs/write_text_file with absolute paths) so BB tracks file changes; (4) the tool loop must stop at MUSE_MAX_TOOL_ROUNDS (default 60) with an explanatory message; (5) session/cancel must stop the loop between rounds; (6) invalid JSON or unknown tool calls must return structured error results to Muse; and (7) existing tests in tests/acp*.test.mjs must continue to pass alongside the new tests/acp-tools.test.mjs.\",\"keyFacts\":[\".agents/plans/muse-agent.md states BB provides ACP client capabilities including fs.readTextFile: true, fs.writeTextFile: true, and terminal: false during initialize.\",\"The first message of a Muse chat must include a short intro (< 8 KB) defining the agent role, cwd, tool protocol, tool list, tool_schema, and skill discovery (.agents/plans/muse-agent.md).\",\"Muse calls tools by ending its reply with a fenced block: ```muse-tool\\\\n{\\\"tool\\\":\\\"<name>\\\",\\\"args\\\":{...}}\\\\n``` (.agents/plans/muse-agent.md).\",\"muse-acp must parse the last muse-tool block of a reply, emitting an in_progress tool_call followed by a completed or failed tool_call_update capped at ~20 KB (.agents/plans/muse-agent.md).\",\"Text preceding a muse-tool block streams to BB as agent_thought_chunk, while raw muse-tool blocks must never stream to agent_message_chunk (.agents/plans/muse-agent.md and task contract).\",\"Tool execution results are returned to the Muse chat as 'TOOL RESULT <name> (ok|error):\\\\n<output>' (.agents/plans/muse-agent.md).\",\"A reply without a muse-tool block represents the final answer, streamed to BB as agent_message_chunk with stopReason end_turn (.agents/plans/muse-agent.md).\",\"The tool loop is capped at MUSE_MAX_TOOL_ROUNDS (default 60) per prompt, terminating with an error message if exceeded, and stops between rounds on session/cancel (.agents/plans/muse-agent.md).\",\"Local tools to support are read_file, write_file, edit_file (exact, unique match), list_dir, grep, and bash (runs in session cwd via /bin/bash -lc, default timeout 120s, max 600s, capped output) (.agents/plans/muse-agent.md).\",\"File paths outside session cwd must be refused (.agents/plans/muse-agent.md and task contract).\",\"When the ACP client announces fs.readTextFile / fs.writeTextFile, file operations must use ACP client requests fs/read_text_file and fs/write_text_file with absolute paths (.agents/plans/muse-agent.md).\",\"Fake mode for tests must support MUSE_BRIDGE_FAKE_SCRIPT (JSON array of replies in order) and MUSE_BRIDGE_FAKE_SENT (appending {\\\"text\\\": ...} per sent message) (.agents/plans/muse-agent.md).\",\"bin/muse-acp.mjs currently receives initialize and session/new but does not store clientCapabilities or session cwd.\",\"bin/muse-acp.mjs currently streams all onDelta chunks directly to agent_message_chunk without thought buffering or tool block filtering.\",\"bin/muse-acp.mjs only handles incoming client requests and notifications on stdin; it lacks a pending-request map to receive responses for outgoing ACP client requests like fs/write_text_file.\",\"openFakeSession in bin/muse-acp.mjs currently generates fixed 'PONG' responses without reading MUSE_BRIDGE_FAKE_SCRIPT or writing MUSE_BRIDGE_FAKE_SENT.\",\"bridge/acp-prompt.mjs strips BB system instructions (<system_instructions> and <system-reminder>) from incoming prompts.\",\"Existing tests in tests/acp.test.mjs verify initialize, session/new, session/set_model, and session persistence across multiple prompts via accounts.json and sessions.json.\"],\"openQuestions\":[\"How will outgoing JSON-RPC requests (e.g. fs/read_text_file, fs/write_text_file) sent to stdout match incoming JSON-RPC responses on stdin in bin/muse-acp.mjs, given the current line reader only processes messages with a 'method' property?\",\"How should onDelta streaming distinguish thoughts from muse-tool blocks in real time before the full block boundary is received, to prevent raw muse-tool text from leaking to agent_message_chunk?\",\"What exact properties and structure are expected in the tool_call and tool_call_update payloads (e.g., tool call ID generation, title format, kind categorization, and content structure)?\",\"What are the contents and requirements of the other existing test files mentioned in owns_paths (tests/acp-cancel.test.mjs and tests/acp-pending.test.mjs), which were not included in the excerpts?\",\"Does the initial intro message explaining the tool protocol and cwd need to be sent on every session/prompt or only on the first prompt of a new Muse chat session?\",\"What specific output length limit applies to bash tool execution output before it is truncated?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 13327,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [
+            "bb-plugin-authoring"
+          ],
+          "picked": [
+            {
+              "name": "bb-plugin-authoring",
+              "p": 0.77
+            }
+          ],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {
+            "bb-plugin-authoring": "/home/ubuntu/.local/share/bb-server-runtime-0.48.1-vk.3/node_modules/bb-app/server/dist/builtin-plugins/bb-guide/skills/bb-plugin-authoring"
+          },
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_ad9fde9429d91a6a",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}
