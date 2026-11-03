@@ -6,6 +6,7 @@ import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { promptText } from "../bridge/acp-prompt.mjs";
+import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
 import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 import { createMuseClient, resolveTransport } from "../bridge/protocol/api.mjs";
@@ -219,7 +220,7 @@ function getSession(sessionId) {
   if (session) return session;
   const saved = loadStore()[sessionId];
   if (!saved) throw codedError(-32602, `unknown session: ${sessionId}`);
-  const restored = { id: sessionId, accountId: saved.accountId ?? null, museChatId: saved.museChatId ?? null, cwd: saved.cwd ?? process.cwd(), cancelled: false, pendingReply: null };
+  const restored = { id: sessionId, accountId: saved.accountId ?? null, museChatId: saved.museChatId ?? null, cwd: saved.cwd ?? process.cwd(), cancelled: false, pendingReply: null, mcp: [] };
   sessions.set(sessionId, restored);
   return restored;
 }
@@ -300,14 +301,17 @@ async function runPrompt(session, params) {
           await streamPendingReply(session, driver, pending);
         }
         const fsCaps = clientCapabilities?.fs ?? {};
+        const mcpIndex = buildMcpIndex(session.mcp);
         const ctx = {
           cwd: session.cwd || process.cwd(),
           sessionId: session.id,
           fsRead: !!fsCaps.readTextFile,
           fsWrite: !!fsCaps.writeTextFile,
           clientRequest,
+          callMcp: (name, args) => callMcpTool(mcpIndex, name, args),
+          describeMcp: (name) => describeMcpTool(mcpIndex, name),
         };
-        let toSend = session.museChatId ? text : `${buildIntro(ctx.cwd)}\n\n${text}`;
+        let toSend = session.museChatId ? text : `${buildIntro(ctx.cwd, [...mcpIndex.keys()])}\n\n${text}`;
         let rounds = 0;
         for (;;) {
           if (session.cancelled) return { stopReason: "cancelled" };
@@ -394,14 +398,16 @@ async function handle(method, params) {
         agentCapabilities: {
           loadSession: false,
           promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          mcpCapabilities: { http: true, sse: false },
         },
         agentInfo: { name: "muse-acp" },
         authMethods: [],
       };
     case "session/new": {
-      const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cwd: typeof params?.cwd === "string" && params.cwd ? params.cwd : process.cwd(), cancelled: false, pendingReply: null };
+      const session = { id: `muse-${randomUUID()}`, accountId: null, museChatId: null, cwd: typeof params?.cwd === "string" && params.cwd ? params.cwd : process.cwd(), cancelled: false, pendingReply: null, mcp: [] };
       sessions.set(session.id, session);
       saveSession(session);
+      session.mcp = await startMcpServers(params?.mcpServers);
       return { sessionId: session.id, models: modelsBlock() };
     }
     case "session/set_model": {
@@ -411,12 +417,28 @@ async function handle(method, params) {
     }
     case "session/prompt":
       return runPrompt(getSession(params.sessionId), params);
-    case "session/close":
+    case "session/close": {
+      const session = sessions.get(params.sessionId);
       sessions.delete(params.sessionId);
+      for (const c of session?.mcp ?? []) c.close?.();
       return {};
+    }
     default:
       throw codedError(-32601, `method not found: ${method}`);
   }
+}
+
+function closeAllMcp() {
+  for (const session of sessions.values()) {
+    for (const c of session.mcp ?? []) c.close?.();
+  }
+}
+process.on("exit", closeAllMcp);
+for (const signal of ["SIGINT", "SIGTERM"]) {
+  process.on(signal, () => {
+    closeAllMcp();
+    process.exit(0);
+  });
 }
 
 const rl = readline.createInterface({ input: process.stdin });
