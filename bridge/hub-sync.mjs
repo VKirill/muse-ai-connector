@@ -15,6 +15,9 @@ export async function syncAcrossHosts({ sourceHostId, accountId, hosts, call }) 
     label: typeof exported?.label === "string" && exported.label ? exported.label : accountId,
     cookies: Array.isArray(exported?.cookies) ? exported.cookies : [],
   };
+  if (Number.isInteger(exported?.maxParallel) && exported.maxParallel >= 1) {
+    payload.maxParallel = exported.maxParallel;
+  }
   const targets = (hosts ?? []).filter((h) => h && h.hostId !== sourceHostId && h.connected && h.runtime);
   const results = [];
   for (const host of targets) {

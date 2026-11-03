@@ -5,6 +5,7 @@ import { bridgeHome, profileDir } from "./paths.mjs";
 
 const STALE_LOCK_MS = 30 * 60 * 1000;
 const MAX_PARALLEL_CAP = 50;
+const DEFAULT_MAX_PARALLEL = 10;
 const STATUSES = new Set(["signed_in", "signed_out", "unknown"]);
 
 /**
@@ -180,7 +181,7 @@ function maxParallelFor(account) {
   if (Number.isInteger(fromAccount) && fromAccount >= 1) return Math.min(fromAccount, MAX_PARALLEL_CAP);
   const fromEnv = Number(process.env.MUSE_MAX_PARALLEL);
   if (Number.isInteger(fromEnv) && fromEnv >= 1) return Math.min(fromEnv, MAX_PARALLEL_CAP);
-  return 1;
+  return DEFAULT_MAX_PARALLEL;
 }
 
 /** @param {string} id */
