@@ -1,0 +1,148 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-session-sync",
+  "attemptId": "lpattempt_5b12669dee0f47d89c26dcbbcbf2c6d9",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_ercxkeci8d",
+  "ownsPaths": [
+    "bridge/sync.mjs",
+    "bin/musebridge.mjs",
+    "tests/sync.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": "bin/musebridge.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/cookies.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/accounts.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/json-file.mjs",
+      "windows": []
+    }
+  ],
+  "output": "Done. All verification passes: `bash /tmp/muse-sync/check.sh` prints OK, and `node --test tests/sync.test.mjs tests/json-file.test.mjs tests/cookies.test.mjs` exits 0 (full suite: 127/127).\n\nChanged paths:\n- `bridge/sync.mjs` — new: `sync.json` targets store (atomic, 0600), `listTargets`/`addTarget`/`removeTarget`, `syncAccount(id,{run})` pushing `JSON.stringify(cookies)` over stdin to `ssh -o BatchMode=yes -o ConnectTimeout=10 <name> musebridge accounts import '<id>' --label '<label>'` (execFile, per-target `{name, ok, error}`, one failure never stops the rest), `syncAll({run})` and `syncIfTargets(id,{run})`.\n- `bin/musebridge.mjs` — `accounts import <id> [--label L]` (stdin JSON validation, `saveCookies` 0600, registry insert keeping the given id, status `signed_in`); `sync targets add|remove|list` and `sync [--account <id>]` (exit 1 only when every push failed); `pushAfterCookies` hook after successful `accounts refresh` and `accounts add` sign-in — wrapped so a failed push never fails the refresh; `main()` now guarded by `invokedDirectly()` so the file is importable, and `cmdAccountsRefresh` accepts an `{ openSession }` dep for tests.\n- `tests/sync.test.mjs` — targets round-trip + 0600, stdin-not-argv ssh push, failing-target isolation, `syncIfTargets` gating, `syncAll` signed-in filter, CLI `accounts import` (0600 + registry `signed_in` + no secret in output), junk-stdin rejection, and refresh→push end-to-end through a fake `ssh` on `PATH`.\n\nDecisions made: cookies never enter argv/stdout/stderr (stdin only); `accounts import` registers the id directly via `updateJson` on `accounts.json` because `addAccount` slugifies labels and `bridge/accounts.mjs` is outside owns_paths; refresh→sync is proven with an injected `openSession` rather than `MUSE_SYNC_DRY` or module mocks (`mock.module` needs a flag the verify command doesn't pass).\n\n```plan-fact\n[{\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/sync.mjs\",\"bin/musebridge.mjs\",\"cmd:bash /tmp/muse-sync/check.sh \\\"$PWD\\\"\"]},{\"item\":2,\"status\":\"done\",\"evidence\":[\"tests/sync.test.mjs\",\"cmd:node --test tests/sync.test.mjs tests/json-file.test.mjs tests/cookies.test.mjs\"]},{\"item\":3,\"status\":\"done\",\"evidence\":[\"cmd:node --test tests/sync.test.mjs tests/json-file.test.mjs tests/cookies.test.mjs\"]}]\n```\n\nAPPROACH: Kept the cookie payload on stdin end-to-end (`syncAccount` → ssh stdin → `accounts import`), stored targets in `<bridgeHome>/sync.json` via the existing atomic-JSON helpers at 0600, and made the refresh→push hook best-effort so sync failures can never break a refresh.\nLESSON: `node:test` module mocking needs `--experimental-test-module-mocks` here, so for CLI-script wiring tests export the command function and inject the session via a deps parameter — a fake `ssh` on `PATH` then exercises the real push path end to end.",
+  "verification": [
+    {
+      "command": "bash /tmp/muse-sync/check.sh \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "bdedb4652c19a62cc50845b5a99395bd3fc4a345b3f1a151d436b1d710aab09f",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_5b12669dee0f47d89c26dcbbcbf2c6d9/muse-ai-connector",
+      "revision": {
+        "head": "281d4087682ace2796f4c2267760e109b01bfc5e",
+        "dirty": 3
+      }
+    },
+    {
+      "command": "node --test tests/sync.test.mjs tests/json-file.test.mjs tests/cookies.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ saveCookies writes 0600 file in a 0700 account directory (2.093917ms)\r\n✔ cookieHeader includes a matching cookie and drops expired, foreign, or http-only-secure mismatches (0.217ms)\r\n✔ loadCookies throws missing_cookies when the file is absent (0.347917ms)\r\n✔ writeJsonAtomic writes the file, keeps mode 0600 and leaves no .tmp (2.15975ms)\r\n✔ readJson returns the fallback for a missing file and throws for a corrupt one (587.220834ms)\r\n✔ updateJson takes over a lock left by a dead process (2.276459ms)\r\n✔ concurrent touch/listAccounts/pickAccount on one registry have zero crashes (620.58825ms)\r\n✔ two processes saving different muse-acp sessions both end up in sessions.json (156.320958ms)\r\n✔ targets add dedupes and stores sync.json with mode 0600, remove drops one (4.374292ms)\r\n✔ syncAccount sends cookies on stdin to ssh -o BatchMode=yes, never in argv (1.996958ms)\r\n✔ one failing target does not stop the next (1.968333ms)\r\n✔ syncIfTargets is a no-op without targets and pushes signed-in cookies with them (1.5585ms)\r\n✔ syncAll skips accounts that are not signed in (2.382333ms)\r\n✔ accounts import reads cookies from stdin, writes mode 0600, registers signed_in (204.8345ms)\r\nRefreshed cookies for acc1.\r\n✔ accounts import rejects junk on stdin (199.017375ms)\r\nfakehost acc1 ok\r\n✔ a successful accounts refresh pushes the cookies to the configured target (560.849625ms)\r\nℹ tests 16\r\nℹ suites 0\r\nℹ pass 16\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 1439.081458\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "b67c11422789f99ceb84d4187e7a0d22a020a499c50f305282f1717c33878972",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_5b12669dee0f47d89c26dcbbcbf2c6d9/muse-ai-connector",
+      "revision": {
+        "head": "281d4087682ace2796f4c2267760e109b01bfc5e",
+        "dirty": 3
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "3664bda8ce8883ba0663780e705dde7e904a7759912bfe85657511f46c16917c",
+      "sentPlanSha256": null,
+      "sourceLength": 2906,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "high",
+      "effectiveReasoningLevel": "high",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "high",
+        "after": "high",
+        "changed": false
+      },
+      "providerId": "devin",
+      "model": "swe-2-high",
+      "serviceTier": null,
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_5b12669dee0f47d89c26dcbbcbf2c6d9",
+      "threadId": "thr_ercxkeci8d",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "devin",
+        "model": "swe-2-high",
+        "reasoningLevel": "high",
+        "serviceTier": null,
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-accounts»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T10:24 muse-atomic-json: Atomic writes of accounts.json, sessions.json and cookies.json. Several Muse chats running at once never crash on a half-written state file.\n- 2026-11-03T09:54 muse-account-slots: Several parallel Muse chats per account (opt-in slots). One Muse account serves several BB chats at the same time.\nincident: loop:topic:19e043fa3aff\nhypothesis: the three earlier families on tests/accounts.test.mjs were unrelated features whose second tries were all accepted (pool, locale, cookie client); the topic was never unsolved, so this new opt-in slot feature leaves that file untouched and proves itself with new test files and a new /tmp check.\nFiles of this area: bin/muse-acp.mjs, bridge/accounts.mjs, bridge/cookies.mjs, bridge/json-file.mjs, tests/json-file.test.mjs, bin/musebridge.mjs, tests/account-slots.test.mjs, tests/acp-slots.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.",
+        "rulesPicked": {
+          "total": 16,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- bin/musebridge.mjs L1-L445 (sha256 2a4c2c20)\n- bridge/cookies.mjs L1-L88 (sha256 401106ef)\n- bridge/accounts.mjs L1-L389 (sha256 66a25979)",
+        "executionPacketSha256": "370a52775d79ecbca5cd348cb31a0a544859969b4b287029d13e1da4e52993dc",
+        "pmReadContext": "{\"summary\":\"This packet presents the current state of accounts and cookie management in the muse-ai-connector plugin across bin/musebridge.mjs, bridge/cookies.mjs, and bridge/accounts.mjs, providing the baseline for the muse-session-sync feature.\\n\\nCurrently, bin/musebridge.mjs serves as the main CLI dispatcher supporting commands such as doctor, chats, history, send, approve, login, and accounts (with subcommands list, add, remove, check, refresh, set). In cmdAccountsRefresh, the CLI launches a headless Chrome session for a given account ID, verifies it is signed in via requireSignedIn, exports cookies via exportAccountCookies using session.exportCookies(), and persists them using saveCookies(accountId, ...). It does not currently implement any synchronization mechanisms or the accounts import command.\\n\\nIn bridge/cookies.mjs, cookies are managed relative to bridgeHome() under accounts/<accountId>/cookies.json. The saveCookies function ensures the account folder exists with 0700 permissions and writes cookies atomically using writePrivateJson with mode 0600. The loadCookies function retrieves parsed JSON cookies or raises an Error with code 'missing_cookies'. The file also provides cookie matching and HTTP header serialization (cookieHeader) for requests.\\n\\nIn bridge/accounts.mjs, accounts are tracked in accounts.json under bridgeHome() with a versioned registry ({ version: 1, accounts: [...] }). Each account contains metadata including id, label, profileDir, status ('signed_in' | 'signed_out' | 'unknown'), timestamps, and optional maxParallel settings. Accounts can be registered with addAccount(label), updated via setStatus and touch, removed via removeAccount, or locked for concurrency control using filesystem locks.\\n\\nTo fulfill the muse-session-sync task contract, the system must add bridge/sync.mjs and update bin/musebridge.mjs to support: (1) managing remote sync targets in <bridgeHome>/sync.json via 'musebridge sync targets add|remove|list <name>', (2) importing cookies from stdin via 'musebridge accounts import <id> [--label L]' without leaking credentials into argv/logs and updating the target's registry status to signed_in with 0600 file mode, (3) executing remote pushes over SSH using 'ssh -o BatchMode=yes ... <target> musebridge accounts import <id>' feeding cookies on stdin via syncAccount and syncAll, and (4) triggering sync upon successful 'accounts refresh' while ensuring that push failures never crash or fail the refresh process.\",\"keyFacts\":[\"bin/musebridge.mjs defines the CLI entry point supporting doctor, chats, history, send, approve, accounts (list, add, remove, check, refresh, set), and login, but currently has no sync or accounts import commands.\",\"bin/musebridge.mjs: cmdAccountsRefresh launches a headless session, validates signed-in status with requireSignedIn, exports cookies via exportAccountCookies, and prints 'Refreshed cookies for <id>.'\",\"bin/musebridge.mjs: exportAccountCookies calls session.exportCookies() and saveCookies(accountId, ...), catching errors silently with a warning to stderr that API transport falls back to browser.\",\"bin/musebridge.mjs: CLI argument parsing relies on takeFlag and takeOption helpers that mutate the args array in place.\",\"bridge/cookies.mjs: cookiesPath(accountId) defines the path as <bridgeHome>/accounts/<accountId>/cookies.json.\",\"bridge/cookies.mjs: saveCookies(id, cookies) ensures the account directory has mode 0700 and writes cookies atomically with mode 0600.\",\"bridge/cookies.mjs: loadCookies(id) reads cookiesPath(id) and throws an Error with code 'missing_cookies' if the file does not exist.\",\"bridge/cookies.mjs: cookieHeader matches valid cookies against a target URL considering domain, path, secure flag, and expiration timestamp.\",\"bridge/accounts.mjs: Registry data is stored at <bridgeHome>/accounts.json adhering to { version: 1, accounts: [...] }.\",\"bridge/accounts.mjs: Account status values are restricted to 'signed_in', 'signed_out', or 'unknown', managed by setStatus.\",\"bridge/accounts.mjs: addAccount(label) creates an account with a slugified unique ID, creates profileDir(id), initializes status to 'unknown', and adds it to the registry.\",\"bridge/accounts.mjs: removeAccount(id, { purge }) deletes an account from the registry, unlinks associated lock files, and optionally removes the profile directory.\",\"bridge/accounts.mjs: listAccounts() loads and normalizes <bridgeHome>/accounts.json, automatically migrating a default profile if present.\",\"bridge/accounts.mjs: Excerpt ends abruptly at line 389 inside acquire(id, { owner }) while setting up slot lock paths.\"],\"openQuestions\":[\"What is the exact schema and structure of <bridgeHome>/sync.json (e.g., an array of target names or an object with version and targets array)?\",\"How should 'musebridge accounts import <id> [--label L]' behave if the account does not exist in accounts.json: should it create the account entry and set status to 'signed_in' automatically?\",\"Does 'accounts import' require creating an empty Chrome profile directory via profileDir(id) on the destination machine if Chrome is not used there?\",\"What specific SSH flags and options should syncAccount include alongside '-o BatchMode=yes' (e.g., ConnectTimeout, StrictHostKeyChecking)?\",\"What are the precise function signatures, options, and return values for syncAccount(id, { run }) and syncAll({ run }) in bridge/sync.mjs?\",\"How should the injected or default runner in '{ run }' be implemented (e.g. child_process.execFile or spawn with stdin streaming)?\",\"How should 'musebridge sync targets add|remove|list' format its output for human CLI consumption and error on duplicates or missing targets?\",\"Should 'accounts refresh' invoke syncAll or only syncAccount for the refreshed account ID?\",\"What content exists in bridge/accounts.mjs beyond line 389, and are there existing helper functions for registering or checking an account without spawning Chrome?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 11760,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "devin/swe-2-high",
+        "harness": {
+          "id": "hrn_45a89c0c083ec7bc",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

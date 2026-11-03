@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-session-sync",
+  "task_sha256": "679bbf4d16f37968c10bb22474a74a16ce067e07f40f9fdbbbae0d7393ca5055",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "72e2ba4acce76c35068a775d1a57573d50e9c49f8fefe72ea548109bd0d446fc",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T11:59:21.314Z",
+  "model": "swe-2-high"
+}
