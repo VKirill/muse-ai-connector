@@ -327,7 +327,8 @@ async function streamPendingReply(session, driver, pending) {
 
 async function runImageTurn(session, driver, text) {
   const parsed = parseLeadingFormat(text);
-  const toSend = imagePrompt(parsed.text, parsed.format || undefined);
+  const toSend =
+    !session.museChatId || parsed.format ? imagePrompt(parsed.text, parsed.format || undefined) : text;
   dumpSent(toSend);
   const result = await driver.send({
     chatId: session.museChatId || undefined,
