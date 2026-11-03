@@ -2,7 +2,7 @@
 title: Muse AI connector (BB provider plugin)
 status: building
 started: 2026-11-02
-updated: 2026-11-02
+updated: 2026-11-03
 ---
 
 # Muse AI connector
@@ -48,8 +48,11 @@ server.ts / host.ts / app.tsx: BB plugin (provider "Muse", settings + accounts s
 4. `muse-settings-ui` — **done** 2026-11-02 (as `muse-settings-ui.2`), run `lprun_adae76e942f24d348acd60f06532e40c` (merge `2c4377e`) — settings/status screen EN+RU (Pokecut), README EN+RU.
 5. `muse-locale-fix.2` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `a965318`) — Chrome launches force `en-US`, language-independent `COMPOSER_SELECTOR`, exported `BUSY_TEXTS`; fixes the live send failure on a Russian-locale profile (found during the live smoke).
 6. `muse-provider-models` — **done** 2026-11-02, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `d1852a4`) — ACP `session/new` advertises `muse-spark` and `session/set_model` is accepted; provider accepts BB reasoning levels `none–high` (fixes HTTP 400 on new Muse chats); plugin 0.1.1.
+7. `muse-acp-prompt-fix` — **done** 2026-11-03, run `lprun_adae76e942f24d348acd60f06532e40c` (merge `8f40445`) — ACP sends only the user's words (`bridge/acp-prompt.mjs` strips BB `<system_instructions>`/`<system-reminder>`), keeps one Muse chat per BB thread (`onChatId` saves the id as soon as it exists) and flushes an interrupted turn's reply before the next prompt.
 
 ## History
+### 2026-11-03
+- Owner report on a live BB chat (thread thr_mv2ft9kxgd, provider Muse): BB's ~184 KB `<system_instructions>` block was typed into Muse, and after a `session/cancel` mid-reply the already-written Muse reply never reached BB and the thread drifted across three Muse chats. `muse-acp-prompt-fix` merged (`8f40445`): `bridge/acp-prompt.mjs` strips system blocks (empty → short note, no Chrome launch), `session.send` takes an `onChatId` callback so `sessions.json` holds the chat id from the moment the URL carries it, and a cancelled turn's pending reply is read from the chat and streamed to BB before the next prompt (fake driver gained per-chat memory, `history`, `onChatId`, `MUSE_BRIDGE_FAKE_DELAY_MS`). `npm test` green (48 pass) + `tsc --noEmit` clean at merge head `8f40445`. Live re-check still pending.
 ### 2026-11-02
 - Run `lprun_adae76e942f24d348acd60f06532e40c` shipped all four build tasks: `muse-account-pool.2` (merge `1a104bc`), `muse-acp-provider` (merge `12e694a`), `muse-settings-ui.2` (merge `2c4377e`); `muse-bridge-core` landed earlier in the same run (`ee1809f`). `npm test` green (26 pass) + `tsc --noEmit` clean at merge head `2c4377e`.
 - Still open (not code): owner live smoke (sign-in + real send), public repo `VKirill/muse-ai-connector`, `gitnexus analyze`, hub install, registry + journal entry.
