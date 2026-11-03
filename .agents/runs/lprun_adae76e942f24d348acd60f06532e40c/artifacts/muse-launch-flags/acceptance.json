@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-launch-flags",
+  "task_sha256": "575b3ffaf9ee0aa6d3b4d953ed49b57a50e463baecafd878d0ceba89984edf43",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "47057e7c114dbb8f778157718ecf12a570c09162a15e4681487c89e5c28db421",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T14:18:06.579Z",
+  "model": "grok-4.6"
+}
