@@ -1,5 +1,7 @@
 #!/usr/bin/env node
 import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import {
   acquire,
   addAccount,
@@ -13,10 +15,12 @@ import {
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
-import { saveCookies } from "../bridge/cookies.mjs";
+import { cookiesPath, saveCookies } from "../bridge/cookies.mjs";
+import { updateJson } from "../bridge/json-file.mjs";
+import { bridgeHome, profileDir } from "../bridge/paths.mjs";
 import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { chromeExecutable, openSession } from "../bridge/session.mjs";
-import { profileDir } from "../bridge/paths.mjs";
+import { addTarget, listTargets, removeTarget, syncAccount, syncAll, syncIfTargets } from "../bridge/sync.mjs";
 
 const HELP = `Usage: musebridge <command>
 
@@ -37,8 +41,15 @@ Commands:
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
   accounts refresh <id>     Export cookies from the signed-in Chrome profile
+  accounts import <id> [--label <label>]
+                            Import a cookies JSON array from stdin (sync targets)
   accounts set <id> --max-parallel <n>
                             Set how many chats the account serves at once (1..50)
+  sync targets add <name>   Add an ssh host that receives refreshed cookies
+  sync targets remove <name>
+                            Remove an ssh sync target
+  sync targets list         Show the ssh sync targets
+  sync [--account <id>]     Push saved cookies to every sync target
   login                     Sign in (adds account default when none exist)
   --help                    Show this help
 `;
@@ -84,6 +95,44 @@ async function exportAccountCookies(session, accountId) {
     saveCookies(accountId, await session.exportCookies());
   } catch {
     process.stderr.write("Could not export cookies; API transport will fall back to browser.\n");
+  }
+}
+
+async function readStdin() {
+  const chunks = [];
+  for await (const chunk of process.stdin) chunks.push(chunk);
+  return Buffer.concat(chunks).toString("utf8");
+}
+
+function ensureRegistered(id, label) {
+  if (listAccounts().some((a) => a.id === id)) return;
+  updateJson(path.join(bridgeHome(), "accounts.json"), { version: 1, accounts: [] }, (current) => {
+    const accounts = Array.isArray(current?.accounts) ? current.accounts : [];
+    if (!accounts.some((a) => a && a.id === id)) {
+      const at = new Date().toISOString();
+      accounts.push({
+        id,
+        label,
+        profileDir: profileDir(id),
+        status: "unknown",
+        createdAt: at,
+        lastUsedAt: at,
+        lastCheckedAt: at,
+      });
+    }
+    return { version: 1, accounts };
+  });
+}
+
+function printSyncLine(r) {
+  process.stdout.write(r.ok ? `${r.name} ${r.account} ok\n` : `${r.name} ${r.account} failed: ${r.error}\n`);
+}
+
+async function pushAfterCookies(id) {
+  try {
+    for (const r of await syncIfTargets(id)) printSyncLine(r);
+  } catch (err) {
+    process.stderr.write(`Cookie sync failed: ${err.message}\n`);
   }
 }
 
@@ -276,6 +325,7 @@ async function cmdAccountsAdd(args) {
     await exportAccountCookies(session, account.id);
     process.stdout.write(`Signed in as ${account.id}.\n`);
   });
+  await pushAfterCookies(account.id);
 }
 
 async function cmdAccountsList(args) {
@@ -342,17 +392,123 @@ async function cmdAccountsSet(args) {
   process.stdout.write(`${id} maxParallel=${n}\n`);
 }
 
-async function cmdAccountsRefresh(args) {
+export async function cmdAccountsRefresh(args, deps = {}) {
   const id = args[0];
   if (!id) {
     process.stderr.write("Usage: musebridge accounts refresh <id>\n");
     process.exit(1);
   }
-  await withSession({ accountId: id, headless: true }, async (session) => {
+  const open = deps.openSession ?? openSession;
+  const session = await open({ accountId: id, headless: true });
+  try {
     await requireSignedIn(session, id);
     await exportAccountCookies(session, id);
     process.stdout.write(`Refreshed cookies for ${id}.\n`);
-  });
+  } finally {
+    await session.close();
+  }
+  await pushAfterCookies(id);
+}
+
+async function cmdAccountsImport(args) {
+  const label = takeOption(args, "--label");
+  const id = args[0];
+  if (!id) {
+    process.stderr.write("Usage: musebridge accounts import <id> [--label <label>]\n");
+    process.exit(1);
+  }
+  if (process.stdin.isTTY) {
+    process.stderr.write("Expected a cookies JSON array on stdin.\n");
+    process.exit(1);
+  }
+  let cookies;
+  try {
+    cookies = JSON.parse(await readStdin());
+  } catch {
+    cookies = null;
+  }
+  if (!Array.isArray(cookies) || cookies.some((c) => !c || typeof c.name !== "string" || !("value" in c))) {
+    process.stderr.write("Invalid cookies JSON on stdin: expected an array of {name, value, ...} objects.\n");
+    process.exit(1);
+  }
+  saveCookies(id, cookies);
+  ensureRegistered(id, label ?? id);
+  setStatus(id, "signed_in");
+  process.stdout.write(`imported ${cookies.length} cookies for ${id}\n`);
+}
+
+async function cmdSyncTargets(args) {
+  const sub = args.shift();
+  switch (sub) {
+    case "add": {
+      const name = args[0];
+      if (!name) {
+        process.stderr.write("Usage: musebridge sync targets add <name>\n");
+        process.exit(1);
+      }
+      addTarget(name);
+      process.stdout.write(`added sync target ${name}\n`);
+      break;
+    }
+    case "remove": {
+      const name = args[0];
+      if (!name) {
+        process.stderr.write("Usage: musebridge sync targets remove <name>\n");
+        process.exit(1);
+      }
+      if (!listTargets().some((t) => t.name === name)) {
+        process.stderr.write(`Unknown sync target: ${name}\n`);
+        process.exit(1);
+      }
+      removeTarget(name);
+      process.stdout.write(`removed sync target ${name}\n`);
+      break;
+    }
+    case "list": {
+      const targets = listTargets();
+      if (targets.length === 0) {
+        process.stdout.write("No sync targets.\n");
+        break;
+      }
+      for (const t of targets) process.stdout.write(`${t.name}\n`);
+      break;
+    }
+    default:
+      process.stderr.write("Usage: musebridge sync targets add|remove|list <name>\n");
+      process.exit(1);
+  }
+}
+
+async function cmdSync(args) {
+  if (args[0] === "targets") {
+    await cmdSyncTargets(args.slice(1));
+    return;
+  }
+  const accountFlag = takeOption(args, "--account");
+  if (listTargets().length === 0) {
+    process.stderr.write("No sync targets. Run: musebridge sync targets add <name>\n");
+    process.exit(1);
+  }
+  let results;
+  if (accountFlag) {
+    if (!fs.existsSync(cookiesPath(accountFlag))) {
+      process.stderr.write(`No cookies for ${accountFlag}\n`);
+      process.exit(1);
+    }
+    results = (await syncAccount(accountFlag)).map((r) => ({ account: accountFlag, ...r }));
+  } else {
+    results = await syncAll();
+  }
+  if (results.length === 0) {
+    process.stdout.write("Nothing to sync: no signed-in accounts with cookies.\n");
+    return;
+  }
+  let ok = 0;
+  for (const r of results) {
+    printSyncLine(r);
+    if (r.ok) ok += 1;
+  }
+  if (ok === 0) process.exit(1);
 }
 
 async function cmdAccounts(args) {
@@ -376,8 +532,11 @@ async function cmdAccounts(args) {
     case "set":
       await cmdAccountsSet(args);
       break;
+    case "import":
+      await cmdAccountsImport(args);
+      break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set\n");
+      process.stderr.write("Usage: musebridge accounts list|add|remove|check|refresh|set|import\n");
       process.exit(1);
   }
 }
@@ -428,6 +587,9 @@ async function main(argv) {
     case "accounts":
       await cmdAccounts(args);
       break;
+    case "sync":
+      await cmdSync(args);
+      break;
     case "login":
       await cmdLogin();
       break;
@@ -438,7 +600,20 @@ async function main(argv) {
   }
 }
 
-main(process.argv).catch((err) => {
-  process.stderr.write(`${err.message}\n`);
-  process.exit(1);
-});
+function invokedDirectly() {
+  try {
+    return (
+      Boolean(process.argv[1]) &&
+      fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url))
+    );
+  } catch {
+    return false;
+  }
+}
+
+if (invokedDirectly()) {
+  main(process.argv).catch((err) => {
+    process.stderr.write(`${err.message}\n`);
+    process.exit(1);
+  });
+}
