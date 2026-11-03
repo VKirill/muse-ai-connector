@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-api-bootstrap-parse",
+  "task_sha256": "d67d6420adb356ce38bc7622595b28d5d9c90ae8a484cf767a00f49f1227abe7",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "6289b63f232f5e215253c5c5b4cd46e0d7a5c9b3b3feaa3243c800e84bb481be",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T01:43:09.754Z",
+  "model": "grok-4.6"
+}
