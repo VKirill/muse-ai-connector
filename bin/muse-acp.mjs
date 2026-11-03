@@ -7,6 +7,7 @@ import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { promptText } from "../bridge/acp-prompt.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
+import { createMuseClient, resolveTransport } from "../bridge/protocol/api.mjs";
 
 const FAKE = process.env.MUSE_BRIDGE_FAKE === "1";
 const FAKE_DELAY_MS = Math.max(0, Number(process.env.MUSE_BRIDGE_FAKE_DELAY_MS || 0));
@@ -116,9 +117,36 @@ async function openFakeSession() {
   };
 }
 
+const apiClients = new Map();
+
 async function openRealSession(opts) {
   const { openSession } = await import("../bridge/session.mjs");
   return openSession(opts);
+}
+
+async function openRealDriver(accountId) {
+  const transport = resolveTransport({ env: process.env });
+  if (transport === "browser") {
+    return { driver: await openRealSession({ accountId, headless: HEADLESS }), ephemeral: true };
+  }
+  const cached = apiClients.get(accountId);
+  if (cached) return { driver: cached, ephemeral: false };
+  try {
+    const client = await createMuseClient({ accountId });
+    apiClients.set(accountId, client);
+    return { driver: client, ephemeral: false };
+  } catch (err) {
+    if (err?.code !== "missing_cookies" && err?.code !== "auth_failed") throw err;
+    process.stderr.write("API transport unavailable; falling back to browser\n");
+    if (err.code === "auth_failed") {
+      try {
+        setStatus(accountId, "signed_out");
+      } catch {
+        /* unregistered */
+      }
+    }
+    return { driver: await openRealSession({ accountId, headless: HEADLESS }), ephemeral: true };
+  }
 }
 
 function getSession(sessionId) {
@@ -183,7 +211,10 @@ async function runPrompt(session, params) {
     try {
       if (session.cancelled) return { stopReason: "cancelled" };
       touch(session.accountId);
-      const driver = FAKE ? await openFakeSession({ accountId: session.accountId, headless: HEADLESS }) : await openRealSession({ accountId: session.accountId, headless: HEADLESS });
+      const opened = FAKE
+        ? { driver: await openFakeSession({ accountId: session.accountId, headless: HEADLESS }), ephemeral: true }
+        : await openRealDriver(session.accountId);
+      const driver = opened.driver;
       try {
         const signedIn = await driver.isSignedIn();
         if (!signedIn) {
@@ -218,12 +249,19 @@ async function runPrompt(session, params) {
         if (session.cancelled) return { stopReason: "cancelled" };
         return { stopReason: "end_turn" };
       } finally {
-        await driver.close();
+        if (opened.ephemeral) await driver.close();
       }
     } finally {
       release();
     }
   } catch (err) {
+    if (err?.code === "auth_failed" && session.accountId) {
+      try {
+        setStatus(session.accountId, "signed_out");
+      } catch {
+        /* unregistered */
+      }
+    }
     if (err?.code === "cancelled" || session.cancelled) {
       if (sendStarted && session.museChatId) {
         session.pendingReply = { chatId: session.museChatId, deliveredPrefix: streamed };

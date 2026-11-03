@@ -255,9 +255,13 @@ export async function openSession({ accountId = "default", headless = true } = {
     return [...handled.values()];
   }
 
+  async function exportCookies() {
+    return context.cookies(["https://muse.ai", "https://auth.meta.com"]);
+  }
+
   async function close() {
     await context.close();
   }
 
-  return { isSignedIn, waitForSignIn, listChats, history, send, approve, close };
+  return { isSignedIn, waitForSignIn, listChats, history, send, approve, exportCookies, close };
 }

@@ -34,7 +34,7 @@ Open BB Settings → Plugins → Muse. The screen lists each connected machine: 
 - **Remove** — drops the account from the registry. Tick **Delete Chrome profile** to also wipe `~/.muse-bridge/profiles/<id>/`.
 - A **busy** pill means that account is running a prompt; wait, then check again.
 
-State lives in `~/.muse-bridge/` (`MUSE_BRIDGE_HOME` overrides it): `accounts.json`, per-account Chrome profiles, and locks. Cookies and tokens are never copied or logged.
+State lives in `~/.muse-bridge/` (`MUSE_BRIDGE_HOME` overrides it): `accounts.json`, per-account Chrome profiles, `accounts/<id>/cookies.json` (mode 0600), and locks. Cookie and token values are never logged. `musebridge` talks to Muse over the stored cookies by default (`--transport api`); Chrome is used to sign in, to run `accounts refresh <id>`, or when `--transport browser` / `MUSE_TRANSPORT=browser` is set. Missing cookies or HTTP 401/403 fall back to Chrome.
 
 The screen follows the BB interface language (English or Russian).
 
@@ -45,10 +45,11 @@ musebridge doctor [--account <id>]
 musebridge accounts list [--json]
 musebridge accounts add <label>
 musebridge accounts check [<id>]
+musebridge accounts refresh <id>
 musebridge accounts remove <id> [--purge]
-musebridge chats [--account <id>] [--json]
-musebridge history [--account <id>] <chatId> [--json]
-musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--headed] [--json] <text>
+musebridge chats [--account <id>] [--transport api|browser] [--json]
+musebridge history [--account <id>] [--transport api|browser] <chatId> [--json]
+musebridge send [--account <id>] [--chat <id>] [--timeout <sec>] [--transport api|browser] [--headed] [--json] <text>
 musebridge approve [--account <id>] --chat <id>
 musebridge login
 muse-acp                          # ACP agent on stdio (BB launches this)
@@ -70,7 +71,7 @@ This is a UI-driven connector. It breaks when Muse changes its page or the `hatc
 
 **Аккаунты** (Настройки → Плагины → Muse): видно Chrome, мост, агент и список аккаунтов. «Добавить аккаунт» открывает Chrome для входа. «Проверить» обновляет статус. «Удалить» снимает запись; галочка «Удалить профиль Chrome» ещё и стирает каталог профиля. «Занят» значит, что на аккаунте сейчас идёт запрос.
 
-**CLI:** `musebridge doctor`, `accounts list|add|check|remove`, `chats`, `history`, `send` (флаг `--timeout <сек>`, по умолчанию 180), `approve`, `login`. У `list --json` есть поле `locked`.
+**CLI:** `musebridge doctor`, `accounts list|add|check|refresh|remove`, `chats`, `history`, `send` (флаги `--timeout <сек>`, `--transport api|browser`; по умолчанию api и 180 с), `approve`, `login`. У `list --json` есть поле `locked`. Chrome нужен для входа и как запасной транспорт.
 
 Когда Muse показывает карточку одобрения («Разрешить Muse …?») в чате, которым управляет коннектор, коннектор сам отвечает «Всегда разрешать». Карточки про деньги (покупка, оплата, подписка) не трогаются — ответ помечается «Muse asks for approval» и ждёт вашего решения в Muse. `musebridge approve --chat <id>` отвечает на ожидающие карточки в существующем чате.
 
