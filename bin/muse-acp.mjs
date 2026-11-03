@@ -4,14 +4,17 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
+import { waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { promptText } from "../bridge/acp-prompt.mjs";
 import { bridgeHome } from "../bridge/paths.mjs";
 
 const FAKE = process.env.MUSE_BRIDGE_FAKE === "1";
 const FAKE_DELAY_MS = Math.max(0, Number(process.env.MUSE_BRIDGE_FAKE_DELAY_MS || 0));
+const FAKE_REPLY_LAG_MS = Math.max(0, Number(process.env.MUSE_BRIDGE_FAKE_REPLY_LAG_MS || 0));
 const LOCK_WAIT_MS = 5 * 60_000;
 const HEADLESS = process.env.MUSE_HEADLESS !== "0" && process.env.MUSE_HEADLESS !== "false";
 const REPLY_TIMEOUT_MS = Math.max(1, Number(process.env.MUSE_REPLY_TIMEOUT_SEC || 180)) * 1000;
+const PENDING_WAIT_MS = Math.max(0, Number(process.env.MUSE_PENDING_WAIT_MS || 30_000));
 const MUSE_MODEL_ID = "muse-spark";
 const MUSE_MODEL_NAME = "Muse Spark";
 
@@ -72,6 +75,20 @@ function signedOutMessage(accountId) {
 const fakeChats = new Map();
 let fakeSeq = 0;
 
+function landFakeReply(messages, reply) {
+  if (FAKE_REPLY_LAG_MS <= 0) {
+    messages.push(reply);
+    return;
+  }
+  const partial = { id: reply.id, role: "assistant", content: "PO", streaming: true };
+  setTimeout(() => messages.push(partial), Math.floor(FAKE_REPLY_LAG_MS / 2)).unref();
+  setTimeout(() => {
+    const i = messages.indexOf(partial);
+    if (i >= 0) messages.splice(i, 1);
+    messages.push(reply);
+  }, FAKE_REPLY_LAG_MS).unref();
+}
+
 async function openFakeSession() {
   return {
     isSignedIn: async () => true,
@@ -86,8 +103,11 @@ async function openFakeSession() {
       messages.push({ id: `fake-user-${++fakeSeq}`, role: "user", content: text, streaming: false });
       await sleep(FAKE_DELAY_MS);
       const reply = { id: `fake-assistant-${++fakeSeq}`, role: "assistant", content: "PONG", streaming: false };
+      if (isCancelled?.()) {
+        landFakeReply(messages, reply);
+        throw codedError("cancelled", "cancelled");
+      }
       messages.push(reply);
-      if (isCancelled?.()) throw codedError("cancelled", "cancelled");
       onDelta?.("PO");
       onDelta?.("NG");
       return { chatId: id, messageId: reply.id, text: "PONG" };
@@ -135,10 +155,7 @@ async function waitForLock(accountId, session) {
 async function streamPendingReply(session, driver, pending) {
   if (!pending.chatId || typeof driver.history !== "function") return;
   try {
-    const { messages } = await driver.history(pending.chatId);
-    const lastUser = messages.findLastIndex((m) => m.role === "user");
-    const assistant = lastUser < 0 ? null : messages.slice(lastUser + 1).filter((m) => m.role === "assistant").at(-1);
-    const full = assistant?.content ?? "";
+    const full = await waitForPendingReply(driver.history, pending.chatId, { timeoutMs: PENDING_WAIT_MS, pollMs: 500 });
     const rest = full.startsWith(pending.deliveredPrefix) ? full.slice(pending.deliveredPrefix.length) : full;
     if (!rest) return;
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `${rest}\n\n` } });
