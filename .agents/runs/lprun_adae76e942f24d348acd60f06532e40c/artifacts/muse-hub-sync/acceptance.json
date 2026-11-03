@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-hub-sync",
+  "task_sha256": "988e3f94334ec618f3f9646a81332399188c33d74e67e5ec85c7c0d4f61e1fd3",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "beea00d6544caef3e54acd19082675db32feca85f21f1db275643eee0dc36ff0",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T12:51:09.123Z",
+  "model": "swe-2-high"
+}
