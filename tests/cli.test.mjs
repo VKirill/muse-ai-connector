@@ -16,3 +16,9 @@ test("musebridge --help exits 0 and names doctor, chats, history, send, login", 
     assert.match(stdout, new RegExp(command));
   }
 });
+
+test("musebridge --help names --timeout on the send line and the approve command", async () => {
+  const { stdout } = await execFileP(process.execPath, [cli, "--help"], { encoding: "utf8" });
+  assert.match(stdout, /send[^\n]*--timeout/);
+  assert.match(stdout, /approve[^\n]*--chat/);
+});
