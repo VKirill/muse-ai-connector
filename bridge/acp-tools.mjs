@@ -325,6 +325,13 @@ muse-tool blocks; never use your own shell or tools for it — they would look a
 different machine. Your first step is list_dir on the workspace root, then read the
 files the task needs.
 
+muse-tool is not one of your tools. It is a fenced text block you write at the end of
+your reply; the BB bridge on the user's machine runs it and answers in the next message.
+Your own tools (muse.read, muse.write, muse.exec, your shell) work on your cloud VM, not
+in the user's workspace; files the user asked for must be written with a muse-tool
+write_file block. For the web use your native browser.* tools as usual, then bring the
+result into the workspace with muse-tool.
+
 You cannot call functions directly. To use tools, END your reply with up to 8 fenced blocks:
 
 \`\`\`muse-tool

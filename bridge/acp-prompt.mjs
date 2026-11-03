@@ -72,7 +72,11 @@ function typeHint(block, name, abs) {
 }
 
 function notSentLine(name, hint) {
-  return `\n\n[Attached file: ${name} (${hint}, not sent: Muse gets only text files for now)]`;
+  return `\n\n[Attached file: ${name} (${hint}, not sent)]`;
+}
+
+function sentAttachmentLine(name) {
+  return `\n\n[Attached file: ${name} — sent as an attachment]`;
 }
 
 function tildeFence(content) {
@@ -169,11 +173,6 @@ function isImageMime(mime, name) {
   return /\.(png|jpe?g|gif|webp|bmp|heic)$/i.test(name || "");
 }
 
-function isPdfMime(mime, name) {
-  if (mime === "application/pdf") return true;
-  return /\.pdf$/i.test(name || "");
-}
-
 function attachmentFromBuffer(buf, name, mime) {
   if (buf.length > MAX_ATTACHMENT_BYTES) return null;
   const mimeType = typeof mime === "string" && mime ? mime : mimeFromName(name);
@@ -203,10 +202,19 @@ export function loadAttachmentFromPath(filePath) {
   return attachmentFromBuffer(buf, name, mimeFromName(name));
 }
 
-function binaryOrFilePiece(name, mime, abs, buf, budget) {
-  const item = attachmentFromBuffer(buf, name, mime);
-  if (!item) return { text: notSentLine(name, "over 10 MB"), used: 0, attachment: null };
-  return { text: "", used: 0, attachment: item };
+/**
+ * A file goes to Muse as a real attachment up to 10 MB; over that a text file is
+ * inlined truncated and a binary gets the not-sent line.
+ */
+function attachmentOrInline(name, mime, buf, budget) {
+  const item = attachmentFromBuffer(buf, name, mime || mimeFromName(name));
+  if (item) return { text: sentAttachmentLine(name), used: 0, attachment: item };
+  const content = utf8Text(buf);
+  if (content !== null) {
+    const piece = inlineTextFile(name, content, budget);
+    return { ...piece, attachment: null };
+  }
+  return { text: notSentLine(name, "over 10 MB"), used: 0, attachment: null };
 }
 
 function collectResourceLink(block, budget) {
@@ -221,13 +229,7 @@ function collectResourceLink(block, budget) {
   } catch {
     return { text: notSentLine(name, typeHint(block, name, abs)), used: 0, attachment: null };
   }
-  if (isImageMime(mime, name) || isPdfMime(mime, name)) return binaryOrFilePiece(name, mime || mimeFromName(name), abs, buf, budget);
-  const content = utf8Text(buf);
-  if (content !== null) {
-    const piece = inlineTextFile(name, content, budget);
-    return { ...piece, attachment: null };
-  }
-  return binaryOrFilePiece(name, mime || mimeFromName(name), abs, buf, budget);
+  return attachmentOrInline(name, mime, buf, budget);
 }
 
 function collectImageBlock(block) {
@@ -257,16 +259,10 @@ function collectEmbeddedResource(block, budget) {
   const name = attachmentName(block, uri);
   const mime = typeof res.mimeType === "string" ? res.mimeType : typeof block?.mimeType === "string" ? block.mimeType : "";
   if (typeof res.text === "string") {
-    const piece = inlineTextFile(name, res.text, budget);
-    return { ...piece, attachment: null };
+    return attachmentOrInline(name, mime, Buffer.from(res.text, "utf8"), budget);
   }
   if (typeof res.blob === "string" && res.blob) {
-    const buf = Buffer.from(res.blob, "base64");
-    if (isImageMime(mime, name) || isPdfMime(mime, name) || utf8Text(buf) === null) {
-      return binaryOrFilePiece(name, mime, "", buf, budget);
-    }
-    const piece = inlineTextFile(name, utf8Text(buf), budget);
-    return { ...piece, attachment: null };
+    return attachmentOrInline(name, mime, Buffer.from(res.blob, "base64"), budget);
   }
   const abs = filePathFromUri(uri);
   if (abs) return collectResourceLink({ ...block, uri, mimeType: mime, name }, budget);
@@ -274,8 +270,9 @@ function collectEmbeddedResource(block, budget) {
 }
 
 /**
- * Joins prompt text like promptText and collects image/file blocks as Muse attachments.
- * Text files stay inlined; pictures and PDFs go in `attachments`.
+ * Joins prompt text like promptText and collects attached files as Muse attachments.
+ * Every file up to 10 MB goes in `attachments` with a marker line in the text; over
+ * 10 MB a text file is inlined truncated and a binary gets the not-sent line.
  * @param {unknown} prompt
  * @returns {{ text: string, attachments: object[] }}
  */
