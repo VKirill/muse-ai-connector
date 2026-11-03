@@ -2,7 +2,9 @@ import { randomUUID } from "node:crypto";
 import zlib from "node:zlib";
 import WebSocket from "ws";
 import { cookieHeader } from "../cookies.mjs";
-import { decodeFrame, encodeRequest } from "./envelope.mjs";
+import { decodeFrame, encodeBodyChunk, encodeRequest } from "./envelope.mjs";
+
+export const BODY_CHUNK_LIMIT = 48 * 1024;
 import { createHandshake } from "./noise.mjs";
 import { createStreamDecoder, decodeBody } from "./ndjson.mjs";
 
@@ -482,17 +484,36 @@ function openTunnel(ws, sendCipher, recvCipher) {
         resHeaders: [],
       });
     });
-    ws.send(
-      sendCipher.encrypt(
-        encodeRequest({
-          streamId,
-          method,
-          path,
-          headers: defaultHeaders(headers, payload != null),
-          body: payload,
-        }),
-      ),
-    );
+    if (payload && payload.length > BODY_CHUNK_LIMIT) {
+      ws.send(
+        sendCipher.encrypt(
+          encodeRequest({
+            streamId,
+            method,
+            path,
+            headers: defaultHeaders(headers, true),
+            body: null,
+            end: false,
+          }),
+        ),
+      );
+      for (let off = 0; off < payload.length; off += BODY_CHUNK_LIMIT) {
+        const part = payload.subarray(off, off + BODY_CHUNK_LIMIT);
+        ws.send(sendCipher.encrypt(encodeBodyChunk({ streamId, chunk: part, end: off + BODY_CHUNK_LIMIT >= payload.length })));
+      }
+    } else {
+      ws.send(
+        sendCipher.encrypt(
+          encodeRequest({
+            streamId,
+            method,
+            path,
+            headers: defaultHeaders(headers, payload != null),
+            body: payload,
+          }),
+        ),
+      );
+    }
     return result;
   }
 

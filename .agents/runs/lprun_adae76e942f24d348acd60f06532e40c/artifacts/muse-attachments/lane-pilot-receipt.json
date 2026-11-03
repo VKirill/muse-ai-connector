@@ -1,0 +1,185 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_adae76e942f24d348acd60f06532e40c",
+  "lanePilotTaskId": "muse-attachments",
+  "attemptId": "lpattempt_d62c2bd0e6544b73957a1dedb04a5250",
+  "pmThreadId": "thr_q4w86he7i7",
+  "writerThreadId": "thr_atanfuuxgu",
+  "ownsPaths": [
+    "bridge/protocol/api.mjs",
+    "bridge/protocol/gateway.mjs",
+    "bridge/protocol/envelope.mjs",
+    "bridge/acp-prompt.mjs",
+    "bin/muse-acp.mjs",
+    "bin/musebridge.mjs",
+    "README.md",
+    "tests/attachments-api.test.mjs",
+    "tests/attachments-acp.test.mjs",
+    "tests/attachments-cli.test.mjs",
+    "version.ts",
+    "package.json",
+    "package-lock.json"
+  ],
+  "readFirst": [
+    {
+      "path": ".agents/plans/muse-attachments.md",
+      "windows": []
+    },
+    {
+      "path": "bridge/protocol/api.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/protocol/gateway.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/protocol/envelope.mjs",
+      "windows": []
+    },
+    {
+      "path": "bridge/acp-prompt.mjs",
+      "windows": []
+    },
+    {
+      "path": "bin/muse-acp.mjs",
+      "windows": []
+    },
+    {
+      "path": "bin/musebridge.mjs",
+      "windows": []
+    }
+  ],
+  "output": "Pictures and files now go to Muse as chat attachments. A message with files uses `/chat/stream` `items` (attachments, then the text). Bodies over 48 KiB go as a head frame with `end=0` plus 48 KiB `bodyChunk` frames. Text `.md` files stay inlined. BB reports `image: true`; the CLI takes `--attach`. Files over 10 MB are refused.\n\nChanged paths:\n- `bridge/protocol/api.mjs`\n- `bridge/protocol/gateway.mjs`\n- `bridge/protocol/envelope.mjs`\n- `bridge/acp-prompt.mjs`\n- `bin/muse-acp.mjs`\n- `bin/musebridge.mjs`\n- `README.md`\n- `tests/attachments-api.test.mjs`\n- `tests/attachments-acp.test.mjs`\n- `tests/attachments-cli.test.mjs`\n- `package.json`\n- `package-lock.json`\n- `version.ts`\n\nChecked: `node /tmp/muse-attach2/check.mjs \"$PWD\"` printed `OK`. `node --test tests/attachments-api.test.mjs tests/attachments-acp.test.mjs tests/attachments-cli.test.mjs tests/version.test.mjs` — 11 pass. `npm run typecheck` exited 0.\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"bridge/protocol/api.mjs:51-62\",\"bridge/protocol/envelope.mjs:184-188\",\"bin/muse-acp.mjs:563\",\"bin/musebridge.mjs:96-97\",\"cmd:node /tmp/muse-attach2/check.mjs \\\"$PWD\\\"\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"bridge/protocol/gateway.mjs:487-503\",\"tests/attachments-api.test.mjs:38-115\",\"cmd:node --test tests/attachments-api.test.mjs tests/attachments-acp.test.mjs tests/attachments-cli.test.mjs tests/version.test.mjs\"]},\n  {\"item\":3,\"status\":\"done\",\"evidence\":[\"bridge/acp-prompt.mjs:282-310\",\"bin/muse-acp.mjs:393-464\",\"tests/attachments-acp.test.mjs:81-110\"]},\n  {\"item\":4,\"status\":\"done\",\"evidence\":[\"tests/attachments-cli.test.mjs:39-103\",\"package.json:3\",\"package-lock.json:3\",\"version.ts:3\",\"cmd:npm run typecheck\"]}\n]\n```\n\nAPPROACH: Send attachments as Muse `items` and keep a plain `message` when there are none; chunk gateway bodies at 48 KiB; collect images/PDFs from ACP and `--attach`, leave markdown in the text.\nLESSON: Muse’s `/chat/stream` takes attachments as `items` (not `message`), and a body over 48 KiB must be a head with `end=0` plus `bodyChunk` frames or the photo never arrives.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-attach2/check.mjs \"$PWD\"",
+      "exitCode": 0,
+      "stdout": "OK\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "3c9a10444e8bab574812c5d33b72ba90db6553d9ba7a5e1cf5adbfacb42449b5",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_2a8a1a840c634f438313fc6fa034abce/muse-ai-connector",
+      "revision": {
+        "head": "c4d14d05c3042f5b8a8b637938a3aeb2a18eb309",
+        "dirty": 13
+      }
+    },
+    {
+      "command": "node --test tests/attachments-api.test.mjs tests/attachments-acp.test.mjs tests/attachments-cli.test.mjs tests/version.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ initialize reports promptCapabilities.image true (89.777875ms)\r\n✔ ACP image and pdf go as Muse attachments; markdown is inlined (83.042708ms)\r\nNoise server identity not verified\r\n✔ chatStreamBody with attachments uses items and omits message (1.933041ms)\r\n✔ chatStreamBody without attachments keeps the message field (0.16825ms)\r\n✔ encodeBodyChunk writes the hatch body-chunk frame (0.243792ms)\r\n✔ a 120 KiB request body is a head with end=0 plus three bodyChunk frames (28.226167ms)\r\n✔ musebridge send --attach records image and file attachments (241.616625ms)\r\n✔ musebridge image --attach records the photo (273.658ms)\r\n✔ musebridge send --attach of a file over 10 MB exits with a clear message (250.664625ms)\r\n✔ PLUGIN_VERSION equals the package.json version (0.710709ms)\r\n✔ host.ts imports the compiled version and never reads package.json (0.382625ms)\r\nℹ tests 11\r\nℹ suites 0\r\nℹ pass 11\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 858.087042\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "43124a8b5dee08093c948c3a09e4e01cdd9b475ed57554d18f5f16670d52df50",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_2a8a1a840c634f438313fc6fa034abce/muse-ai-connector",
+      "revision": {
+        "head": "c4d14d05c3042f5b8a8b637938a3aeb2a18eb309",
+        "dirty": 13
+      }
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "stdout": "\r\n> bb-plugin-muse@0.3.7 typecheck\r\n> tsc --noEmit\r\n\r\n\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.1\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.1\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "ec06f648c17546ee19f9a397b6ac6d520245695d2f8c8d5209c6242fc5ad53c5",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_2a8a1a840c634f438313fc6fa034abce/muse-ai-connector",
+      "revision": {
+        "head": "c4d14d05c3042f5b8a8b637938a3aeb2a18eb309",
+        "dirty": 13
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "5e4b63c45481a3694545ba08adcb06bae10b862f67b8b44f7ae7b2e09d847861",
+      "sentPlanSha256": null,
+      "sourceLength": 1847,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-cursor",
+      "model": "grok-4.6",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_adae76e942f24d348acd60f06532e40c",
+      "attemptId": "lpattempt_d62c2bd0e6544b73957a1dedb04a5250",
+      "threadId": "thr_atanfuuxgu",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "acp-cursor",
+        "model": "grok-4.6",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-plugin»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T14:50 muse-image-markdown: Show Muse images in BB chats as Markdown images. Pictures from the Muse Image model appear inline in the BB chat.\n- 2026-11-03T14:37 muse-acp-test-models: Update acp.test.mjs to the two Muse models. The whole test suite of the Muse connector is green again after the image mode landed.\n- 2026-11-03T14:34 muse-image-mode: Muse image mode: musebridge image and a Muse Image model in BB chats. The owner generates pictures with Muse from a BB chat or the CLI, with an optional form factor prefix.\n- 2026-11-03T14:18 muse-launch-flags: Fix the Muse agent launch: BB permission flags go after the sh script. BB chats on Muse start again on every machine.\n- 2026-11-03T13:44 muse-version-embed: Compile the plugin version into the host bundle and warm up runtime install on every host. Every BB machine gets the runtime of the installed plugin version without opening the settings screen.\n- 2026-11-03T12:51 muse-hub-sync: Copy signed-in Muse accounts to every connected BB machine through the hub. An account signed in once on a machine with Chrome works on every connected BB machine, servers included.\n- 2026-11-03T12:44 muse-runtime-install: Plugin installs its CLI runtime on every BB machine by itself. Any BB user gets the Muse CLI and agent on every connected machine just by installing the plugin.\nFiles of this area: bin/muse-acp.mjs, package-lock.json, package.json, tests/acp-image.test.mjs, version.ts, tests/acp.test.mjs, README.md, bin/musebridge.mjs, bridge/images.mjs, bridge/protocol/api.mjs, bridge/protocol/gateway.mjs, server.ts, tests/cli-image.test.mjs, tests/fixtures/history-image.json, tests/images.test.mjs, launch-spec.mjs, tests/launch-spec.test.mjs, host.ts, tests/version.test.mjs, bridge/hub-sync.mjs, tests/accounts-export.test.mjs, tests/hub-sync.test.mjs, bridge/runtime-install.mjs, tests/runtime-install.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- Правя тестовый файл из owns_paths, меняй только ожидаемые значения внутри существующих строгих assert (deepEqual/equal) и добавляй новые проверки рядом — не удаляй строки assert и не ослабляй строгую проверку до assert.ok/includes/truthiness; перед ответом перечитай свой diff по тестам и верни всё, что стало слабее: test_fit помечает это как сломанную проверку, и попытки сгорают до лимита.\n- For a BB ACP provider, check every launch spec and output shape against BB's own bridge code before shipping: permission flags are inserted at permissionCli.insertAfterArgs (default 0, so a /bin/sh -c wrapper needs insertAfterArgs after its args), and agent_message_chunk keeps only text (image blocks are dropped; show pictures as Markdown ![alt](workspace-relative path)).",
+        "rulesPicked": {
+          "total": 18,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_af70160574711f7e",
+            "rule_17e6afe8b5c0e8d9"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- .agents/plans/muse-unclosed-tool-block.md (not in the workspace; skip it)\n- bridge/acp-tools.mjs L1-L419 (sha256 4bdcf65f)\n- tests/acp-tools.test.mjs L1-L392 (sha256 086fc060)",
+        "executionPacketSha256": "d4fec1934247a07eea38dc909849c4ffa01651ad00d9d430751828b2b16a5e57",
+        "pmReadContext": "{\"summary\":\"This execution packet addresses a bug in the Muse AI connector where Muse sends tool call blocks that omit the closing triple-backtick fence or final closing brace, or have text glued directly after the JSON. In bridge/acp-tools.mjs, tool call detection currently relies on TOOL_BLOCK_RE (/```muse-tool[ \\\\t]*\\\\r?\\\\n?([\\\\s\\\\S]*?)```/g), which strictly requires a closing ```. When Muse truncates the closing fence, parseToolCall returns { kind: \\\"none\\\", text }, causing the tool call to be missed and eventually forcing the truncated text to be treated as a final answer after MAX_BLOCKLESS_REPLIES. Real session data from Muse chat 84a16a39 revealed that 10 of ~40 tool replies across two chats exhibited this truncation on the server side.\\n\\nThe plan (.agents/plans/muse-unclosed-tool-block.md) specifies updating parseToolCall to: (1) retain precedence for the last valid closed block; (2) if no closed block matches or if a closed match fails parsing due to backticks inside a string, fall back to an unclosed block scanner; (3) scan from the last unclosed ```muse-tool opener tracking string escapes and nesting depth, completing valid JSON at depth 0 with remaining text added to thought; (4) append missing closing brackets/braces ('}', ']') in stack order if scanning ends outside a string with depth > 0; and (5) return an error object if scanning cuts off inside an open string. Required deliverables include bumping the version to 0.3.4 across version.ts, package.json, and package-lock.json, creating tests/acp-tools-unclosed.test.mjs and tests/fixtures/muse-unclosed-replies.json, and passing both node /tmp/muse-unclosed/check.mjs and the project test suite.\",\"keyFacts\":[\".agents/plans/muse-unclosed-tool-block.md: In Muse chat 84a16a39 (session thr_ss25zgvfxa), tool replies ended with '\\\"}' omitting the closing fence and sometimes the final '}', and once had a sentence glued right after '\\\"}}'.\",\".agents/plans/muse-unclosed-tool-block.md: Muse's raw /chat/history confirms the server stores truncated text directly (display_text == payload.content, display_text_ready: true), affecting 10 of ~40 replies across two chats.\",\".agents/plans/muse-unclosed-tool-block.md: When TOOL_BLOCK_RE fails to match an unclosed block, parseToolCall returns { kind: 'none', text }, and after MAX_BLOCKLESS_REPLIES the cut text becomes the final answer.\",\".agents/plans/muse-unclosed-tool-block.md: The fix requires the last closed block to win first, falling back to a scanner starting at the last unclosed muse-tool opener that tracks string escapes and delimiter depth.\",\".agents/plans/muse-unclosed-tool-block.md: If the scanner reaches depth 0, the JSON is extracted and any trailing text (minus optional fence) joins thought; if it ends outside a string with depth > 0, missing '}'/']' are appended in order.\",\".agents/plans/muse-unclosed-tool-block.md: If the scanner ends inside an open string, parseToolCall must return { kind: 'error', error: 'muse-tool block was cut off …' }.\",\".agents/plans/muse-unclosed-tool-block.md: A closed block match that fails JSON parsing (such as backticks inside a JSON string) must fall back to the scanner.\",\".agents/plans/muse-unclosed-tool-block.md: Verification requires running node /tmp/muse-unclosed/check.mjs <checkout>, which is currently failing (red) on base because all 5 real replies parse as kind 'none'.\",\".agents/plans/muse-unclosed-tool-block.md: The task requires bumping version to 0.3.4 in package.json, package-lock.json, and version.ts, and adding tests/acp-tools-unclosed.test.mjs and tests/fixtures/muse-unclosed-replies.json.\",\"bridge/acp-tools.mjs: TOOL_BLOCK_RE is defined as /```muse-tool[ \\\\t]*\\\\r?\\\\n?([\\\\s\\\\S]*?)```/g.\",\"bridge/acp-tools.mjs: parseToolCall returns { kind: 'none', text } when no matching block is found by TOOL_BLOCK_RE.\",\"bridge/acp-tools.mjs: parseToolCall calculates thought by concatenating text before the matched block and text after the matched block.\",\"bridge/acp-tools.mjs: parseToolCall returns { kind: 'error', name: 'muse-tool', error: `invalid muse-tool JSON: ${err.message}`, args: {}, thought } if JSON.parse fails on the block content.\",\"bridge/acp-tools.mjs: parseToolCall returns { kind: 'error', name: 'muse-tool', error: 'muse-tool block has no tool name', args, thought } if parsed.tool is not a non-empty string.\",\"bridge/acp-tools.mjs: When successful, parseToolCall returns { kind: 'call', name, args, thought } with args defaulting to an empty object.\",\"tests/acp-tools.test.mjs: Existing tests verify parseToolCall handles no block (returning kind 'none'), single blocks, last-block-wins semantics, and bad JSON error handling without crashing.\"],\"openQuestions\":[\".agents/plans/muse-unclosed-tool-block.md: The exact error message string required when a block is cut inside a string is written with an ellipsis ('muse-tool block was cut off …'), leaving the exact required substring unstated.\",\"version.ts: The file is listed in read_first and owns_paths to be set to 0.3.4, but its current format and content are not included in the provided excerpts.\",\"package.json & package-lock.json: Neither file is included in the excerpts, so current version fields and formatting conventions cannot be verified directly from the packet.\",\"/tmp/muse-unclosed/check.mjs & /tmp/muse-unclosed/real-replies.json: Both are external verification paths referenced in the plan and brief, but their internal code and contents are not in the excerpts.\",\"bridge/acp-tools.mjs: The excerpt does not define how leading thought before ```muse-tool and trailing glued sentences after the recovered JSON should be combined or formatted (e.g. whitespace joining).\",\"tests/acp-tools.test.mjs: The excerpt truncates at line 392 ('ass'), omitting the remainder of the test file.\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 14205,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "acp-cursor/grok-4.6",
+        "harness": {
+          "id": "hrn_3f1fce496ecc7f90",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}

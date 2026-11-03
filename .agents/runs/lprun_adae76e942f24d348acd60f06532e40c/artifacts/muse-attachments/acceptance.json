@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-attachments",
+  "task_sha256": "a6e4cc1d05c3dac52cda897eae012434c1a3618e82981c2a89ec9eeecfdc6bb5",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "28ce5f8e5abe534a746ee7105bbf9fcf4a4f91164d00100a64820d05fdb8f40c",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-03T17:05:58.526Z",
+  "model": "grok-4.6"
+}

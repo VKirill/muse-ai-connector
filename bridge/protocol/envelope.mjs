@@ -161,9 +161,31 @@ function decodeHttp(bytes) {
 function decodeRequest(bytes) {
   const fields = readFields(bytes);
   const streamId = asNumber(fields.find((f) => f.field === 1)?.value) ?? 0;
+  const dataField = fields.find((f) => f.field === 4);
+  if (dataField && !fields.find((f) => f.field === 2)) {
+    const data = readFields(dataField.value);
+    const chunk = data.find((f) => f.field === 1);
+    const end = data.find((f) => f.field === 2);
+    return {
+      streamId,
+      method: "",
+      path: "",
+      headers: [],
+      body: new Uint8Array(),
+      chunk: chunk ? new Uint8Array(asBytes(chunk.value)) : new Uint8Array(),
+      end: end ? asNumber(end.value) === 1 : false,
+    };
+  }
   const httpField = fields.find((f) => f.field === 2);
   const http = httpField ? decodeHttp(httpField.value) : { method: "", path: "", headers: [], body: new Uint8Array(), end: false };
   return { streamId, ...http };
+}
+
+export function encodeBodyChunk({ id, streamId, chunk, end } = {}) {
+  const frameId = id == null ? randomId() : id;
+  const data = Buffer.concat([fieldBytes(1, chunk ?? Buffer.alloc(0)), fieldVarint(2, end ? 1 : 0)]);
+  const msg = Buffer.concat([fieldVarint(1, streamId ?? 0), fieldBytes(4, data)]);
+  return new Uint8Array(Buffer.concat([fieldVarint(1, frameId), fieldVarint(2, 0), fieldVarint(3, 1), fieldBytes(4, fieldBytes(2, msg))]));
 }
 
 function decodeResponse(bytes) {

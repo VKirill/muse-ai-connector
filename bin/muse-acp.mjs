@@ -5,7 +5,7 @@ import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
 import { waitForPendingReply } from "../bridge/acp-pending.mjs";
-import { extractBbContext, promptText } from "../bridge/acp-prompt.mjs";
+import { collectPrompt, extractBbContext } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
 import { buildIntro, OUTPUT_CAP, parseToolCall, resultMessage, runTool, stripDoneMarker, toolKind, toolTitle } from "../bridge/acp-tools.mjs";
 import { readJson, updateJson } from "../bridge/json-file.mjs";
@@ -154,11 +154,20 @@ function dumpSent(text) {
   }
 }
 
-function fakeLogSent(text) {
+function fakeLogSent(text, attachments) {
   const file = process.env.MUSE_BRIDGE_FAKE_SENT;
   if (!file) return;
+  const rec = { text };
+  if (attachments?.length) {
+    rec.attachments = attachments.map((a) => ({
+      type: a.type,
+      mime_type: a.mime_type,
+      filename: a.filename,
+      bytes: Buffer.from(a.data_base64 ?? "", "base64").length,
+    }));
+  }
   try {
-    fs.appendFileSync(file, `${JSON.stringify({ text })}\n`);
+    fs.appendFileSync(file, `${JSON.stringify(rec)}\n`);
   } catch {
     /* best effort */
   }
@@ -184,13 +193,13 @@ async function openFakeSession() {
     async history(chatId) {
       return { chatId, revision: null, hasMore: false, messages: fakeChats.get(chatId) ?? [] };
     },
-    async send({ chatId, text, onDelta, onChatId, isCancelled }) {
+    async send({ chatId, text, attachments, onDelta, onChatId, isCancelled }) {
       const id = chatId ?? `fake-muse-chat-${++fakeSeq}`;
       let messages = fakeChats.get(id);
       if (!messages) fakeChats.set(id, (messages = []));
       onChatId?.(id);
       messages.push({ id: `fake-user-${++fakeSeq}`, role: "user", content: text, streaming: false });
-      fakeLogSent(text);
+      fakeLogSent(text, attachments);
       await sleep(FAKE_DELAY_MS);
       const replyText = fakeNextReply();
       const reply = { id: `fake-assistant-${++fakeSeq}`, role: "assistant", content: replyText, streaming: false };
@@ -325,7 +334,7 @@ async function streamPendingReply(session, driver, pending) {
   }
 }
 
-async function runImageTurn(session, driver, text) {
+async function runImageTurn(session, driver, text, attachments) {
   const parsed = parseLeadingFormat(text);
   const toSend =
     !session.museChatId || parsed.format ? imagePrompt(parsed.text, parsed.format || undefined) : text;
@@ -333,6 +342,7 @@ async function runImageTurn(session, driver, text) {
   const result = await driver.send({
     chatId: session.museChatId || undefined,
     text: toSend,
+    attachments,
     timeoutMs: REPLY_TIMEOUT_MS,
     isCancelled: () => session.cancelled,
     onChatId: (id) => {
@@ -380,9 +390,11 @@ async function runImageTurn(session, driver, text) {
 
 async function runPrompt(session, params) {
   session.cancelled = false;
-  const text = promptText(params.prompt);
+  const collected = collectPrompt(params.prompt);
+  const text = collected.text;
+  const attachments = collected.attachments;
   const bbContext = extractBbContext(params.prompt);
-  if (!text) {
+  if (!text && !attachments.length) {
     update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: "Nothing to send to Muse: the message held only BB system instructions." } });
     return { stopReason: "end_turn" };
   }
@@ -421,7 +433,7 @@ async function runPrompt(session, params) {
           await streamPendingReply(session, driver, pending);
         }
         if (session.modelId === MUSE_IMAGE_MODEL_ID) {
-          return await runImageTurn(session, driver, text);
+          return await runImageTurn(session, driver, text, attachments);
         }
         const fsCaps = clientCapabilities?.fs ?? {};
         const mcpIndex = buildMcpIndex(session.mcp);
@@ -449,6 +461,7 @@ async function runPrompt(session, params) {
           const result = await driver.send({
             chatId: session.museChatId || undefined,
             text: toSend,
+            attachments: rounds === 0 ? attachments : undefined,
             timeoutMs: REPLY_TIMEOUT_MS,
             isCancelled: () => session.cancelled,
             onChatId: (id) => {
@@ -547,7 +560,7 @@ async function handle(method, params) {
         protocolVersion: 1,
         agentCapabilities: {
           loadSession: false,
-          promptCapabilities: { image: false, audio: false, embeddedContext: false },
+          promptCapabilities: { image: true, audio: false, embeddedContext: false },
           mcpCapabilities: { http: true, sse: false },
         },
         agentInfo: { name: "muse-acp" },
