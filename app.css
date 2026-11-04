@@ -21,7 +21,9 @@
   --muse-warning: var(--pk-warning, var(--warning));
   --muse-warning-text: var(--pk-warning-text, var(--warning));
   --muse-danger-text: var(--pk-danger-text, var(--destructive));
-  --muse-space: var(--spacing, 12px);
+  --muse-gap: 16px;
+  --muse-pad: 24px;
+  --muse-card-pad: 20px;
 }
 
 @layer components {
@@ -29,7 +31,7 @@
     display: grid;
     grid-template-columns: 200px 1fr;
     grid-template-rows: minmax(0, 1fr);
-    gap: var(--muse-space);
+    gap: 0;
     min-width: 0;
     max-width: 100%;
     height: 100%;
@@ -42,6 +44,8 @@
     flex-direction: column;
     gap: 4px;
     min-width: 0;
+    padding: var(--muse-pad) var(--muse-gap) var(--muse-pad) var(--muse-pad);
+    border-right: 1px solid var(--muse-hairline);
   }
 
   .muse-sidenav-btn {
@@ -90,9 +94,35 @@
     min-height: 0;
     display: flex;
     flex-direction: column;
-    gap: var(--muse-space);
+    gap: var(--muse-gap);
     overflow-y: auto;
-    padding: var(--muse-space);
+    padding: var(--muse-pad);
+  }
+
+  .muse-content {
+    display: flex;
+    min-width: 0;
+    width: 100%;
+    max-width: 1080px;
+    margin-inline: auto;
+    flex-direction: column;
+    gap: var(--muse-gap);
+  }
+
+  .muse-form {
+    max-width: 560px;
+  }
+
+  .muse-field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .muse-field-label {
+    font-size: 13px;
+    font-weight: 500;
   }
 
   .muse-toolbar {
@@ -154,7 +184,7 @@
     display: flex;
     flex-direction: column;
     gap: 10px;
-    padding: 12px;
+    padding: var(--muse-card-pad);
     border: 1px solid var(--muse-hairline);
     border-radius: 14px;
     background-color: var(--muse-card);
@@ -499,6 +529,9 @@
   .muse-sidenav {
     flex-direction: row;
     overflow-x: auto;
+    padding: var(--muse-gap) var(--muse-pad);
+    border-right: none;
+    border-bottom: 1px solid var(--muse-hairline);
   }
 
   .muse-sidenav-btn {
