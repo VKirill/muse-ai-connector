@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { definePluginApp, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import "./app.css";
-import { t } from "./i18n";
+import { detectLocale, t } from "./i18n";
 import { reloginSummary } from "./relogin-summary";
 import type { HostEntry, MergedUsageAccount, SyncRow, rpcContract } from "./server";
+import { formatExtraTokens, formatUsageReset } from "./usage-format";
 
 type AccountRow = NonNullable<HostEntry["status"]>["accounts"][number];
 type HostStatus = NonNullable<HostEntry["status"]>;
@@ -98,16 +99,6 @@ function mergedAccounts(hosts: HostEntry[]): MergedAccount[] {
     }
   }
   return [...map.values()];
-}
-
-function formatReset(usage: MergedUsageAccount["usage"]): string {
-  if (!usage) return "";
-  if (usage.periodLabel) return usage.periodLabel;
-  if (typeof usage.resetsAt === "number") {
-    const ms = usage.resetsAt > 1e12 ? usage.resetsAt : usage.resetsAt * 1000;
-    return new Date(ms).toLocaleDateString();
-  }
-  return "";
 }
 
 function chromeValue(st: HostStatus): string {
@@ -219,10 +210,11 @@ function AccountMeter({
   onRetry: () => void;
 }) {
   const snapshot = usage?.usage;
+  const locale = detectLocale();
   const percent = snapshot?.percentUsed;
   const meter = typeof percent === "number" ? Math.max(0, Math.min(100, percent)) : 0;
-  const reset = formatReset(snapshot ?? null);
-  const extra = snapshot?.extraTokensLeftLabel ?? (snapshot?.extraTokensBalance != null ? String(snapshot.extraTokensBalance) : "");
+  const reset = formatUsageReset(snapshot ?? null, locale);
+  const extra = formatExtraTokens(snapshot ?? null, locale);
   if (loading) {
     return (
       <div className="muse-meter-row">
