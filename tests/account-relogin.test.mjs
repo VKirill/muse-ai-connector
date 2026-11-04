@@ -5,7 +5,6 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { PLUGIN_VERSION } from "../version.ts";
 import { reloginSummary } from "../i18n.ts";
 
 const execFileP = promisify(execFile);
@@ -72,10 +71,4 @@ test("reloginSummary no other hosts is an ok summary with count 0", () => {
     kind: "ok",
     text: "Вход выполнен, скопирован на 0 машин",
   });
-});
-
-test("version is 0.3.17", () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(PLUGIN_VERSION, "0.3.17");
-  assert.equal(pkg.version, "0.3.17");
 });

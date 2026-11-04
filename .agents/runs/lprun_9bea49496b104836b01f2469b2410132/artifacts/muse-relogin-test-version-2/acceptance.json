@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-relogin-test-version-2",
+  "task_sha256": "4c753d27c6b03aea5fe3783a2901752562d41db5f544c1ba071a5460384fff64",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "3c970bf350013f93eea209148b744f8931e56aa368a1bfec07b3280f067813db",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-04T18:43:40.221Z",
+  "model": "claude-haiku-5-5"
+}
