@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { definePluginApp, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { t } from "./i18n";
@@ -8,6 +8,10 @@ type AccountRow = NonNullable<HostEntry["status"]>["accounts"][number];
 type HostStatus = NonNullable<HostEntry["status"]>;
 type PanelPage = "" | "machines" | "add";
 type MergedAccount = AccountRow & { machines: Array<{ hostId: string; name: string; account: AccountRow }> };
+
+// Same limit the server uses in collectMergedUsage (server.ts USAGE_TIMEOUT_MS);
+// the value is not imported so the app bundle never pulls in server code.
+const USAGE_TIMEOUT_MS = 45000;
 
 function useLocale(): void {
   const [, setLocale] = useState(() => t("navAccounts"));
@@ -216,7 +220,7 @@ function AccountMeter({
         <div className="muse-meter muse-meter-loading" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageLoading")}>
           <span className="muse-meter-fill" />
         </div>
-        <span className="muse-muted">{t("usageLoading")}</span>
+        <span className="muse-muted muse-meter-label">{t("usageLoading")}</span>
       </div>
     );
   }
@@ -226,7 +230,13 @@ function AccountMeter({
         <div className="muse-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageUnavailable", { reason: usage.error.message })}>
           <span className="muse-meter-fill" />
         </div>
-        <span className="muse-error">{t("usageUnavailable", { reason: usage.error.message })}</span>
+        <span className="muse-error muse-meter-label" title={usage.error.message}>
+          {t("usageUnavailableLabel")}
+          {" · "}
+          <button type="button" className="muse-btn muse-btn-compact" onClick={onRetry}>
+            {t("retry")}
+          </button>
+        </span>
       </div>
     );
   }
@@ -236,7 +246,7 @@ function AccountMeter({
         <div className="muse-meter" role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuetext={t("usageNotRead")}>
           <span className="muse-meter-fill" />
         </div>
-        <span className="muse-muted">
+        <span className="muse-muted muse-meter-label">
           {t("usageNotRead")}
           {" · "}
           <button type="button" className="muse-btn muse-btn-compact" onClick={onRetry}>
@@ -535,20 +545,49 @@ function AccountsPage({
   const rpc = useRpc<typeof rpcContract>();
   const [rows, setRows] = useState<MergedUsageAccount[] | null>(null);
   const [usageError, setUsageError] = useState<string | null>(null);
+  const accounts = useMemo(() => mergedAccounts(hosts), [hosts]);
+  const accountsRef = useRef(accounts);
+  accountsRef.current = accounts;
   const loadUsage = useCallback(() => {
+    let settled = false;
+    const failAll = (error: { code: string; message: string }) =>
+      setRows(
+        accountsRef.current.map((a) => ({
+          id: a.id,
+          label: a.label,
+          usage: null,
+          error,
+          hosts: a.machines.map((m) => m.hostId),
+        })),
+      );
+    const timer = setTimeout(() => {
+      if (settled) return;
+      settled = true;
+      failAll({ code: "usage_timeout", message: t("usageTimeout") });
+    }, USAGE_TIMEOUT_MS);
     rpc.call("usage", {}).then(
       (r) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
         setRows(r.accounts);
         setUsageError(null);
       },
       (e) => {
-        setRows([]);
-        setUsageError(e instanceof Error ? e.message : String(e));
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        const message = e instanceof Error ? e.message : String(e);
+        failAll({ code: "usage_unavailable", message });
+        setUsageError(message);
       },
     );
+    return () => {
+      settled = true;
+      clearTimeout(timer);
+    };
   }, [rpc]);
   useEffect(() => loadUsage(), [loadUsage]);
-  const accounts = useMemo(() => mergedAccounts(hosts), [hosts]);
   const byId = useMemo(() => new Map((rows ?? []).map((r) => [r.id, r])), [rows]);
   const loading = rows === null;
   const summary = t("summaryAccounts", {

@@ -122,7 +122,37 @@ type HostUsageFetch = (
   id: string,
 ) => Promise<{ accounts: Array<{ id: string; usage: UsageSnapshot | null; error: UsageError | null }> }>;
 
-export async function collectMergedUsage(hosts: HostEntry[], fetchUsage: HostUsageFetch): Promise<MergedUsageAccount[]> {
+export const USAGE_TIMEOUT_MS = 45000;
+
+class UsageTimeoutError extends Error {
+  constructor(ms: number) {
+    super(`usage fetch timed out after ${ms} ms`);
+    this.name = "UsageTimeoutError";
+  }
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new UsageTimeoutError(ms)), ms);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (e) => {
+        clearTimeout(timer);
+        reject(e);
+      },
+    );
+  });
+}
+
+export async function collectMergedUsage(
+  hosts: HostEntry[],
+  fetchUsage: HostUsageFetch,
+  opts: { timeoutMs?: number } = {},
+): Promise<MergedUsageAccount[]> {
+  const timeoutMs = opts.timeoutMs ?? USAGE_TIMEOUT_MS;
   type Group = { label: string; hosts: string[]; sourceHostId: string | null };
   const groups = new Map<string, Group>();
   for (const host of hosts) {
@@ -143,7 +173,7 @@ export async function collectMergedUsage(hosts: HostEntry[], fetchUsage: HostUsa
         return { id, label: group.label, usage: null, error: null, hosts: group.hosts };
       }
       try {
-        const result = await fetchUsage(group.sourceHostId, id);
+        const result = await withTimeout(fetchUsage(group.sourceHostId, id), timeoutMs);
         const row = result.accounts.find((a) => a.id === id) ?? result.accounts[0];
         return {
           id,
@@ -157,7 +187,10 @@ export async function collectMergedUsage(hosts: HostEntry[], fetchUsage: HostUsa
           id,
           label: group.label,
           usage: null,
-          error: { code: "usage_unavailable", message: e instanceof Error ? e.message : String(e) },
+          error: {
+            code: e instanceof UsageTimeoutError ? "usage_timeout" : "usage_unavailable",
+            message: e instanceof Error ? e.message : String(e),
+          },
           hosts: group.hosts,
         };
       }
