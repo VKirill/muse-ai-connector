@@ -595,7 +595,7 @@ function AccountsPage({
     machines: String(hosts.length),
   });
   return (
-    <>
+    <div className="muse-content">
       <Toolbar
         title={t("pageAccountsTitle")}
         summary={summary}
@@ -625,7 +625,7 @@ function AccountsPage({
           onRetry={loadUsage}
         />
       ))}
-    </>
+    </div>
   );
 }
 
@@ -641,7 +641,7 @@ function MachinesPage({
   onRefresh: () => void;
 }) {
   return (
-    <>
+    <div className="muse-content">
       <Toolbar
         title={t("pageMachinesTitle")}
         summary={t("summaryAccounts", {
@@ -655,7 +655,7 @@ function MachinesPage({
         <MachineCard key={h.hostId} h={h} busy={busy} onInstall={onInstall} />
       ))}
       {hosts.length === 0 ? <div className="muse-muted">{t("hostOffline")}</div> : null}
-    </>
+    </div>
   );
 }
 
@@ -681,7 +681,7 @@ function AddAccountPage({
   const optionLabel = (h: HostEntry) =>
     !h.connected || !h.status?.chromeFound ? `${h.name} — ${t("chromeRequired")}` : h.name;
   return (
-    <>
+    <div className="muse-content">
       <Toolbar
         title={t("pageAddTitle")}
         summary={t("summaryAccounts", {
@@ -689,7 +689,7 @@ function AddAccountPage({
           machines: String(hosts.length),
         })}
       />
-      <div className="muse-card">
+      <div className="muse-card muse-form">
         {adding ? (
           <div className="muse-progress">
             <span className="muse-spinner" aria-hidden="true" />
@@ -697,9 +697,12 @@ function AddAccountPage({
           </div>
         ) : (
           <>
-            <label className="muse-row">
-              <span className="muse-row-label">{t("pickMachine")}</span>
+            <div className="muse-field">
+              <label className="muse-field-label" htmlFor="muse-add-machine">
+                {t("pickMachine")}
+              </label>
               <select
+                id="muse-add-machine"
                 className="muse-input"
                 value={hostId}
                 disabled={busy}
@@ -711,31 +714,37 @@ function AddAccountPage({
                   </option>
                 ))}
               </select>
-            </label>
+            </div>
             {!selected?.status?.chromeFound ? (
               <p className="muse-muted">{t("noChromeOnHost", { names: chromeMachineNames(hosts) })}</p>
             ) : null}
-            <div className="muse-actions">
-              <input
-                className="muse-input"
-                value={label}
-                disabled={busy}
-                placeholder={t("labelPlaceholder")}
-                onChange={(e) => setLabel(e.target.value)}
-              />
-              <button
-                type="button"
-                className="muse-btn muse-btn-accent"
-                disabled={busy || !label.trim() || !selected?.status?.chromeFound}
-                onClick={() => {
-                  const next = label.trim();
-                  if (!next || !hostId) return;
-                  onAdd(hostId, next);
-                  setLabel("");
-                }}
-              >
-                {t("addAccount")}
-              </button>
+            <div className="muse-field">
+              <label className="muse-field-label" htmlFor="muse-add-label">
+                {t("accountLabel")}
+              </label>
+              <div className="muse-actions">
+                <input
+                  id="muse-add-label"
+                  className="muse-input"
+                  value={label}
+                  disabled={busy}
+                  placeholder={t("labelPlaceholder")}
+                  onChange={(e) => setLabel(e.target.value)}
+                />
+                <button
+                  type="button"
+                  className="muse-btn muse-btn-accent"
+                  disabled={busy || !label.trim() || !selected?.status?.chromeFound}
+                  onClick={() => {
+                    const next = label.trim();
+                    if (!next || !hostId) return;
+                    onAdd(hostId, next);
+                    setLabel("");
+                  }}
+                >
+                  {t("addAccount")}
+                </button>
+              </div>
             </div>
           </>
         )}
@@ -751,7 +760,7 @@ function AddAccountPage({
           </button>
         ) : null}
       </div>
-    </>
+    </div>
   );
 }
 
