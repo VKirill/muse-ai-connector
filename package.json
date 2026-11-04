@@ -1,6 +1,6 @@
 {
   "name": "bb-plugin-muse",
-  "version": "0.3.14",
+  "version": "0.3.15",
   "description": "Muse as a BB provider: drive the Muse web app from a persistent Chrome profile.",
   "license": "Apache-2.0",
   "author": "Kirill Vechkasov",
