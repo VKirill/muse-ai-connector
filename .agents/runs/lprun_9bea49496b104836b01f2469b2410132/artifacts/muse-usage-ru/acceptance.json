@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-usage-ru",
+  "task_sha256": "65ea27a4afe0b9f38a0b0ad5992758c70ddf87cfdcd3803a4199fa41199bf73b",
+  "attempt": 1,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "77b059bc43475ca8a38707f872fd06093d0a5cdd99be2d51b52a0ca90895c376",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-04T18:37:42.908Z",
+  "model": "grok-4.6"
+}
