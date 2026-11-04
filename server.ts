@@ -93,6 +93,7 @@ export type SyncRow = z.infer<typeof syncRow>;
 const hostContract = defineRpcContract({
   status: { input: z.object({}).strict(), output: hostStatus, experimental_retryable: true },
   addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
+  reloginAccount: { input: z.object({ id: z.string() }).strict(), output: hostStatus },
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
   installRuntime: { input: z.object({}).strict(), output: hostStatus },
@@ -110,6 +111,7 @@ const hostContract = defineRpcContract({
 export const rpcContract = defineRpcContract({
   hosts: { input: z.object({ hostId: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   addAccount: { input: z.object({ hostId: z.string(), label: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry), synced: z.array(syncRow) }) },
+  reloginAccount: { input: z.object({ hostId: z.string(), id: z.string() }).strict(), output: z.object({ hosts: z.array(hostEntry), synced: z.array(syncRow) }) },
   syncAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry), synced: z.array(syncRow) }) },
   checkAccounts: { input: z.object({ hostId: z.string(), id: z.string().optional() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
   removeAccount: { input: z.object({ hostId: z.string(), id: z.string(), purge: z.boolean() }).strict(), output: z.object({ hosts: z.array(hostEntry) }) },
@@ -273,8 +275,8 @@ export default function plugin(bb: BbPluginApi): void {
     icon: "./icons/muse.svg",
     family: "acp",
     strings: {
-      signInHint: "Sign in to a Muse account in BB Settings → Plugins → Muse",
-      expiredHint: "The Muse session expired. Sign in again in BB Settings → Plugins → Muse.",
+      signInHint: "Sign in to a Muse account in the Muse panel (sidebar → Muse accounts).",
+      expiredHint: "The Muse session expired. Press “Sign in again” on the account in the Muse panel.",
       installUrl: "https://muse.ai/",
     },
     experimental_visibility: "installed",
@@ -417,6 +419,12 @@ export default function plugin(bb: BbPluginApi): void {
       if (!created) return { ...answer, synced: [] as SyncRow[] };
       const entries = await listHosts();
       return { ...answer, synced: await syncFrom(hostId, created.id, entries) };
+    },
+    async reloginAccount({ hostId, id }) {
+      await host.call("reloginAccount", { id }, { hostId });
+      const entries = await listHosts();
+      const synced = await syncFrom(hostId, id, entries);
+      return { hosts: entries, synced };
     },
     async syncAccounts({ hostId, id }) {
       const entries = await listHosts();

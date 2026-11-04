@@ -45,6 +45,7 @@ Commands:
                             cards about money are left to you)
   accounts list [--json]    List Muse accounts
   accounts add <label>      Register an account and open a sign-in window
+  accounts login <id>       Open a sign-in window for an existing account
   accounts remove <id> [--purge]
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
@@ -488,6 +489,29 @@ async function cmdAccountsAdd(args) {
   await pushAfterCookies(account.id);
 }
 
+async function cmdAccountsLogin(args) {
+  const id = args[0];
+  if (!id) {
+    process.stderr.write("Usage: musebridge accounts login <id>\n");
+    process.exit(1);
+  }
+  if (!listAccounts().some((account) => account.id === id)) {
+    process.stderr.write(`Unknown account: ${id}\n`);
+    process.exit(2);
+  }
+  await withSession({ accountId: id, headless: false }, async (session) => {
+    const ok = await session.waitForSignIn();
+    setStatus(id, ok ? "signed_in" : "signed_out");
+    if (!ok) {
+      process.stderr.write("Timed out waiting for Muse sign-in.\n");
+      process.exit(2);
+    }
+    await exportAccountCookies(session, id);
+    process.stdout.write(`Signed in as ${id}.\n`);
+  });
+  await pushAfterCookies(id);
+}
+
 async function cmdAccountsList(args) {
   const asJson = takeFlag(args, "--json");
   const accounts = listAccounts().map((account) => ({
@@ -754,6 +778,9 @@ async function cmdAccounts(args) {
     case "add":
       await cmdAccountsAdd(args);
       break;
+    case "login":
+      await cmdAccountsLogin(args);
+      break;
     case "remove":
       await cmdAccountsRemove(args);
       break;
@@ -776,7 +803,7 @@ async function cmdAccounts(args) {
       await cmdAccountsExport(args);
       break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|remove|check|usage|refresh|set|import|export\n");
+      process.stderr.write("Usage: musebridge accounts list|add|login|remove|check|usage|refresh|set|import|export\n");
       process.exit(1);
   }
 }

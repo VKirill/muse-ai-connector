@@ -64,6 +64,11 @@ const en = {
   check: "Check",
   checkAll: "Check all",
   copyToAll: "Copy to all machines",
+  signInAgain: "Sign in again",
+  reloginInProgress: "Opened a sign-in window on {name}: sign in to Muse…",
+  reloginOk: "Signed in and copied to {count} machines",
+  reloginPartial: "Signed in, but not copied to: {names} ({error})",
+  noChromeMachine: "A machine with Google Chrome is required",
   remove: "Remove",
   purgeProfile: "Delete Chrome profile",
   removeConfirm: "Remove account {label}?",
@@ -150,6 +155,11 @@ const ru: Record<I18nKey, string> = {
   check: "Проверить",
   checkAll: "Проверить все",
   copyToAll: "Скопировать на все машины",
+  signInAgain: "Войти заново",
+  reloginInProgress: "Открыли окно входа на {name}: войдите в Muse…",
+  reloginOk: "Вход выполнен, скопирован на {count} машин",
+  reloginPartial: "Вход выполнен, но не скопирован на: {names} ({error})",
+  noChromeMachine: "Нужна машина с Google Chrome",
   remove: "Удалить",
   purgeProfile: "Удалить профиль Chrome",
   removeConfirm: "Удалить аккаунт {label}?",
@@ -219,4 +229,26 @@ export function t(key: I18nKey, vars?: Record<string, string>, locale: Locale = 
     for (const [name, value] of Object.entries(vars)) text = text.replaceAll(`{${name}}`, value);
   }
   return text;
+}
+
+export type ReloginSummary = { kind: "ok" | "err"; text: string };
+
+export function reloginSummary(
+  synced: Array<{ ok: boolean; hostId: string; error: string | null }>,
+  hosts: Array<{ hostId: string; name: string }>,
+  locale: Locale = "en",
+): ReloginSummary {
+  const failed = synced.filter((row) => !row.ok);
+  if (failed.length === 0) {
+    return {
+      kind: "ok",
+      text: t("reloginOk", { count: String(synced.filter((row) => row.ok).length) }, locale),
+    };
+  }
+  const names = failed.map((row) => hosts.find((h) => h.hostId === row.hostId)?.name ?? row.hostId).join(", ");
+  const error = failed.find((row) => row.error)?.error ?? "";
+  return {
+    kind: "err",
+    text: t("reloginPartial", { names, error }, locale),
+  };
 }

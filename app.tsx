@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { definePluginApp, useBbNavigate, useRpc } from "@get-bb/plugin-sdk/app";
 import "./app.css";
 import { t } from "./i18n";
+import { reloginSummary } from "./relogin-summary";
 import type { HostEntry, MergedUsageAccount, SyncRow, rpcContract } from "./server";
 
 type AccountRow = NonNullable<HostEntry["status"]>["accounts"][number];
@@ -52,6 +53,14 @@ function chromeMachineNames(hosts: HostEntry[]): string {
     .filter((h) => h.connected && h.status?.chromeFound)
     .map((h) => h.name)
     .join(", ");
+}
+
+function pickReloginHost(account: MergedAccount, hosts: HostEntry[]): HostEntry | undefined {
+  const chrome = hosts.filter((h) => h.connected && h.status?.chromeFound);
+  const signedOut = chrome.find((h) =>
+    account.machines.some((m) => m.hostId === h.hostId && m.account.status === "signed_out"),
+  );
+  return signedOut ?? chrome[0];
 }
 
 function addSuccessText(label: string, synced: SyncRow[], hosts: HostEntry[]): string {
@@ -285,27 +294,36 @@ function AccountMeter({
 
 function AccountLimitCard({
   account,
+  hosts,
   usage,
   loading,
   busy,
   onCheck,
   onSync,
   onRemove,
+  onRelogin,
   onRetry,
 }: {
   account: MergedAccount;
+  hosts: HostEntry[];
   usage: MergedUsageAccount | undefined;
   loading: boolean;
   busy: boolean;
   onCheck: (hostId: string, id: string) => void;
   onSync: (hostId: string, id: string) => void;
   onRemove: (hostId: string, id: string, purge: boolean) => void;
+  onRelogin: (hostId: string, id: string) => Promise<{ hosts: HostEntry[]; synced: SyncRow[] }>;
   onRetry: () => void;
 }) {
   const [confirming, setConfirming] = useState(false);
   const [purge, setPurge] = useState(false);
+  const [reloginRunning, setReloginRunning] = useState(false);
+  const [reloginNotice, setReloginNotice] = useState<{ kind: "ok" | "err"; text: string } | null>(null);
   const pill = statusPill(account);
   const actionHost = account.machines.find((m) => m.account.status === "signed_in") ?? account.machines[0];
+  const reloginHost = pickReloginHost(account, hosts);
+  const signedOutAnywhere = account.machines.some((m) => m.account.status === "signed_out");
+  const cardBusy = busy || reloginRunning;
   return (
     <div className="muse-card">
       <div className="muse-card-head">
@@ -319,8 +337,31 @@ function AccountLimitCard({
         <div className="muse-card-actions">
           <button
             type="button"
+            className={signedOutAnywhere ? "muse-btn muse-btn-accent" : "muse-btn"}
+            disabled={cardBusy || !reloginHost}
+            title={!reloginHost ? t("noChromeMachine") : undefined}
+            onClick={() => {
+              if (!reloginHost) return;
+              setReloginRunning(true);
+              setReloginNotice(null);
+              onRelogin(reloginHost.hostId, account.id).then(
+                (r) => {
+                  setReloginNotice(reloginSummary(r.synced, r.hosts));
+                  setReloginRunning(false);
+                },
+                (e) => {
+                  setReloginNotice({ kind: "err", text: e instanceof Error ? e.message : String(e) });
+                  setReloginRunning(false);
+                },
+              );
+            }}
+          >
+            {t("signInAgain")}
+          </button>
+          <button
+            type="button"
             className="muse-btn muse-btn-compact"
-            disabled={busy || !actionHost}
+            disabled={cardBusy || !actionHost}
             onClick={() => actionHost && onCheck(actionHost.hostId, account.id)}
           >
             {t("check")}
@@ -328,7 +369,7 @@ function AccountLimitCard({
           <button
             type="button"
             className="muse-btn muse-btn-compact"
-            disabled={busy || !actionHost}
+            disabled={cardBusy || !actionHost}
             onClick={() => actionHost && onSync(actionHost.hostId, account.id)}
           >
             {t("copyToAll")}
@@ -336,7 +377,7 @@ function AccountLimitCard({
           <button
             type="button"
             className="muse-btn muse-btn-compact muse-btn-danger"
-            disabled={busy || !actionHost}
+            disabled={cardBusy || !actionHost}
             onClick={() => {
               setPurge(false);
               setConfirming(true);
@@ -346,6 +387,15 @@ function AccountLimitCard({
           </button>
         </div>
       </div>
+      {reloginRunning ? (
+        <div className="muse-progress">
+          <span className="muse-spinner" aria-hidden="true" />
+          <span>{t("reloginInProgress", { name: reloginHost?.name ?? "" })}</span>
+        </div>
+      ) : null}
+      {reloginNotice ? (
+        <div className={reloginNotice.kind === "ok" ? "muse-ok" : "muse-error"}>{reloginNotice.text}</div>
+      ) : null}
       {confirming ? (
         <div className="muse-confirm">
           <div>{t("confirmRemove", { label: account.label })}</div>
@@ -357,7 +407,7 @@ function AccountLimitCard({
             <button
               type="button"
               className="muse-btn muse-btn-danger"
-              disabled={busy || !actionHost}
+              disabled={cardBusy || !actionHost}
               onClick={() => {
                 if (!actionHost) return;
                 onRemove(actionHost.hostId, account.id, purge);
@@ -534,6 +584,7 @@ function AccountsPage({
   onCheck,
   onSync,
   onRemove,
+  onRelogin,
 }: {
   hosts: HostEntry[];
   busy: boolean;
@@ -541,6 +592,7 @@ function AccountsPage({
   onCheck: (hostId: string, id: string) => void;
   onSync: (hostId: string, id: string) => void;
   onRemove: (hostId: string, id: string, purge: boolean) => void;
+  onRelogin: (hostId: string, id: string) => Promise<{ hosts: HostEntry[]; synced: SyncRow[] }>;
 }) {
   const rpc = useRpc<typeof rpcContract>();
   const [rows, setRows] = useState<MergedUsageAccount[] | null>(null);
@@ -616,12 +668,14 @@ function AccountsPage({
         <AccountLimitCard
           key={account.id}
           account={account}
+          hosts={hosts}
           usage={byId.get(account.id)}
           loading={loading}
           busy={busy}
           onCheck={onCheck}
           onSync={onSync}
           onRemove={onRemove}
+          onRelogin={onRelogin}
           onRetry={loadUsage}
         />
       ))}
@@ -787,6 +841,20 @@ function MusePanel({ subPath }: { subPath: string }) {
             onCheck={(hostId, id) => run(() => rpc.call("checkAccounts", { hostId, id }), hostId)}
             onSync={(hostId, id) => run(() => rpc.call("syncAccounts", { hostId, id }), hostId)}
             onRemove={(hostId, id, purge) => run(() => rpc.call("removeAccount", { hostId, id, purge }), hostId)}
+            onRelogin={(hostId, id) => {
+              setBusy(true);
+              return rpc.call("reloginAccount", { hostId, id }).then(
+                (r) => {
+                  mergeHosts(r.hosts);
+                  setBusy(false);
+                  return r;
+                },
+                (e) => {
+                  setBusy(false);
+                  throw e;
+                },
+              );
+            }}
           />
         ) : null}
         {hosts && page === "machines" ? (
