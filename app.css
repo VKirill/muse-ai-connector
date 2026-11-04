@@ -28,10 +28,13 @@
   .muse-layout {
     display: grid;
     grid-template-columns: 200px 1fr;
+    grid-template-rows: minmax(0, 1fr);
     gap: var(--muse-space);
     min-width: 0;
     max-width: 100%;
-    align-items: start;
+    height: 100%;
+    max-height: 100dvh;
+    min-height: 0;
   }
 
   .muse-sidenav {
@@ -84,9 +87,12 @@
 
   .muse-workspace {
     min-width: 0;
+    min-height: 0;
     display: flex;
     flex-direction: column;
     gap: var(--muse-space);
+    overflow-y: auto;
+    padding: var(--muse-space);
   }
 
   .muse-toolbar {
@@ -158,9 +164,13 @@
   .muse-card-head {
     display: flex;
     flex-wrap: wrap;
-    align-items: flex-start;
+    align-items: center;
     justify-content: space-between;
     gap: 8px;
+  }
+
+  .muse-card p {
+    margin: 0;
   }
 
   .muse-card-actions {
@@ -409,10 +419,19 @@
 
   .muse-meter-pct {
     flex: 0 0 auto;
+    min-width: 9rem;
+    white-space: nowrap;
+    text-align: right;
     font-size: 20px;
     font-weight: 650;
     line-height: 1;
+  }
+
+  .muse-meter-label {
+    flex: 0 0 auto;
+    min-width: 9rem;
     white-space: nowrap;
+    text-align: right;
   }
 
   .muse-divider {
@@ -474,6 +493,7 @@
 @media (max-width: 720px) {
   .muse-layout {
     grid-template-columns: 1fr;
+    grid-template-rows: auto minmax(0, 1fr);
   }
 
   .muse-sidenav {
