@@ -84,6 +84,7 @@ export type HostStatus = z.infer<typeof hostStatus>;
 const hostContract = defineRpcContract({
   status: { input: z.object({}).strict(), output: hostStatus, experimental_retryable: true },
   addAccount: { input: z.object({ label: z.string() }).strict(), output: hostStatus },
+  reloginAccount: { input: z.object({ id: z.string() }).strict(), output: hostStatus },
   checkAccounts: { input: z.object({ id: z.string().optional() }).strict(), output: hostStatus },
   removeAccount: { input: z.object({ id: z.string(), purge: z.boolean() }).strict(), output: hostStatus },
   installRuntime: { input: z.object({}).strict(), output: hostStatus },
@@ -264,6 +265,10 @@ export default experimental_defineHostEntry({
     async addAccount({ label }) {
       const result = await runBridge(["accounts", "add", label], ADD_TIMEOUT_MS);
       return readStatus(failNote(result, "musebridge accounts add failed."));
+    },
+    async reloginAccount({ id }) {
+      const result = await runBridge(["accounts", "login", id], ADD_TIMEOUT_MS);
+      return readStatus(failNote(result, "musebridge accounts login failed."));
     },
     async checkAccounts({ id }) {
       const args = id ? ["accounts", "check", id] : ["accounts", "check"];
