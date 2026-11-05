@@ -1,0 +1,154 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_f3ade39b014a491fb0abff5691724bca",
+  "lanePilotTaskId": "muse-host-call-deadline",
+  "attemptId": "lpattempt_7b5f9a1efd9e44758743956f5cd988f7",
+  "pmThreadId": "thr_x7d6rg2uiu",
+  "writerThreadId": "thr_uztik4fxin",
+  "ownsPaths": [
+    "server.ts",
+    "tests/host-call-timeouts.test.mjs"
+  ],
+  "readFirst": [
+    {
+      "path": "server.ts",
+      "windows": []
+    },
+    {
+      "path": "host.ts",
+      "windows": []
+    }
+  ],
+  "output": "Медленные вызовы хоста из `server.ts` больше не опираются на 30-секундный дедлайн BB. Для входа, проверки, установки и usage передаётся свой `timeoutMs` выше лимита на стороне хоста, так что relogin может дождаться Chrome и после этого запустить `syncFrom`.\n\nИзменённые пути:\n- `server.ts`\n- `tests/host-call-timeouts.test.mjs`\n\nКонстанты: `HOST_LOGIN_TIMEOUT_MS` = 12 мин, `HOST_CHECK_TIMEOUT_MS` = 3 мин, `HOST_INSTALL_TIMEOUT_MS` = 10 мин, `HOST_USAGE_TIMEOUT_MS` = `USAGE_TIMEOUT_MS` + 15 с. Лимиты в `host.ts` не трогал.\n\nПроверки (все exit 0):\n- `node /tmp/muse-host-deadline/check.mjs .`\n- `node --test tests/host-call-timeouts.test.mjs tests/ui-scroll.test.mjs tests/ui-panel.test.mjs tests/account-relogin.test.mjs` — 17 pass\n- `npx tsc --noEmit`\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"server.ts:128\",\"server.ts:421\",\"server.ts:428\",\"cmd:node /tmp/muse-host-deadline/check.mjs .\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"server.ts:129\",\"server.ts:445\",\"cmd:node /tmp/muse-host-deadline/check.mjs .\"]},\n  {\"item\":3,\"status\":\"done\",\"evidence\":[\"server.ts:130\",\"server.ts:451\",\"cmd:node /tmp/muse-host-deadline/check.mjs .\"]},\n  {\"item\":4,\"status\":\"done\",\"evidence\":[\"server.ts:127\",\"server.ts:131\",\"server.ts:455\",\"cmd:node /tmp/muse-host-deadline/check.mjs .\"]},\n  {\"item\":5,\"status\":\"done\",\"evidence\":[\"tests/host-call-timeouts.test.mjs\",\"cmd:node --test tests/host-call-timeouts.test.mjs tests/ui-scroll.test.mjs tests/ui-panel.test.mjs tests/account-relogin.test.mjs\"]},\n  {\"item\":6,\"status\":\"done\",\"evidence\":[\"cmd:npx tsc --noEmit\"]}\n]\n```\n\nAPPROACH: Exported host-side-plus-slack timeout constants on the plugin server and passed them as `timeoutMs` only on the five slow `host.call` sites; a fake-`bb` RPC test records those options.\nLESSON: BB host RPC defaults to 30 s unless the caller sets `timeoutMs` above the host command’s own limit, or follow-up work like `syncFrom` never runs.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-host-deadline/check.mjs .",
+      "exitCode": 0,
+      "stdout": "ok: slow host calls carry timeoutMs above the host-side limits\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "3d5944da2ab9fbb23b15a4fa0155e4efef32bbe2d9601b4441fa107970a28f45",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_7b5f9a1efd9e44758743956f5cd988f7/muse-ai-connector",
+      "revision": {
+        "head": "9530e273bfed76e77167b149f24431b4ea90020f",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "node --test tests/host-call-timeouts.test.mjs tests/ui-scroll.test.mjs tests/ui-panel.test.mjs tests/account-relogin.test.mjs",
+      "exitCode": 0,
+      "stdout": "✔ accounts login nope with empty home exits 2 and names the unknown account (213.509167ms)\r\n✔ musebridge --help lists accounts login <id> (219.611167ms)\r\n✔ reloginSummary all-ok counts only ok rows (0.820875ms)\r\n✔ reloginSummary one failed row names the machine and error (0.10175ms)\r\n✔ reloginSummary no other hosts is an ok summary with count 0 (0.065625ms)\r\n✔ reloginAccount and addAccount pass timeoutMs above ADD_TIMEOUT_MS (3.124125ms)\r\n✔ checkAccounts passes timeoutMs above CHECK_TIMEOUT_MS (0.146958ms)\r\n✔ installRuntime passes timeoutMs above 5 min (0.097792ms)\r\n✔ usage passes timeoutMs above USAGE_TIMEOUT_MS (0.40375ms)\r\n✔ server usage merges an account on two hosts and reads usage once (4.392166ms)\r\n✔ an account whose usage fails carries error and usage null (0.262208ms)\r\n✔ package.json, package-lock.json and version.ts carry the same version (0.418209ms)\r\n✔ .muse-workspace scrolls inside the bounded .muse-layout (0.859416ms)\r\n✔ meter labels share nowrap and one min-width so bars end at the same x (1.722333ms)\r\n✔ collectMergedUsage gives up on a hung host within timeoutMs (201.593042ms)\r\n✔ collectMergedUsage defaults to a 45 s timeout (0.160209ms)\r\n✔ AccountsPage marks every card unavailable when the usage call fails or times out (0.160708ms)\r\nℹ tests 17\r\nℹ suites 0\r\nℹ pass 17\r\nℹ fail 0\r\nℹ cancelled 0\r\nℹ skipped 0\r\nℹ todo 0\r\nℹ duration_ms 548.80725\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "acca95f79e0f47cf3a32aa5164812e6ac5dbbac124467c72675aabfe16d8cd5a",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_7b5f9a1efd9e44758743956f5cd988f7/muse-ai-connector",
+      "revision": {
+        "head": "9530e273bfed76e77167b149f24431b4ea90020f",
+        "dirty": 2
+      }
+    },
+    {
+      "command": "npx tsc --noEmit",
+      "exitCode": 0,
+      "stdout": "\\\u001b[1G\u001b[0K\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m New \u001b[31mmajor\u001b[39m version of npm available! \u001b[31m11.16.0\u001b[39m -> \u001b[34m12.2.2\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m Changelog: \u001b[34mhttps://github.com/npm/cli/releases/tag/v12.2.2\u001b[39m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m To update run: \u001b[4mnpm install -g npm@12.2.2\u001b[24m\r\n\u001b[1mnpm\u001b[22m \u001b[96mnotice\u001b[39m\r\n\\\u001b[1G\u001b[0K",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "174e990b0953f5a699c849ce5f4ff4fd66d948204644dd485c148e7887490a7c",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_7b5f9a1efd9e44758743956f5cd988f7/muse-ai-connector",
+      "revision": {
+        "head": "9530e273bfed76e77167b149f24431b4ea90020f",
+        "dirty": 2
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 5,
+    "risk": "medium",
+    "sourceRisk": "medium",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "124965e51c00c0c665460fb57867805ce7d548da86b1dc94c111eac44091e2c5",
+      "sentPlanSha256": null,
+      "sourceLength": 2910,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-cursor",
+      "model": "grok-4.6",
+      "serviceTier": "fast",
+      "requestedServiceTier": "fast",
+      "runId": "lprun_f3ade39b014a491fb0abff5691724bca",
+      "attemptId": "lpattempt_7b5f9a1efd9e44758743956f5cd988f7",
+      "threadId": "thr_uztik4fxin",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "acp-cursor",
+        "model": "grok-4.6",
+        "reasoningLevel": "medium",
+        "serviceTier": "fast",
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-accounts»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T11:59 muse-session-sync: Push account sessions to other BB machines over ssh (musebridge sync). A Muse session refreshed on the Mac mini reaches OVH without manual copying.\n- 2026-11-03T10:24 muse-atomic-json: Atomic writes of accounts.json, sessions.json and cookies.json. Several Muse chats running at once never crash on a half-written state file.\n- 2026-11-03T09:54 muse-account-slots: Several parallel Muse chats per account (opt-in slots). One Muse account serves several BB chats at the same time.\nincident: loop:topic:19e043fa3aff\nhypothesis: the three earlier families on tests/accounts.test.mjs were unrelated features whose second tries were all accepted (pool, locale, cookie client); the topic was never unsolved, so this new opt-in slot feature leaves that file untouched and proves itself with new test files and a new /tmp check.\nFiles of this area: bin/musebridge.mjs, bridge/sync.mjs, tests/sync.test.mjs, bin/muse-acp.mjs, bridge/accounts.mjs, bridge/cookies.mjs, bridge/json-file.mjs, tests/json-file.test.mjs, tests/account-slots.test.mjs, tests/acp-slots.test.mjs",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- Правя тестовый файл из owns_paths, меняй только ожидаемые значения внутри существующих строгих assert (deepEqual/equal) и добавляй новые проверки рядом — не удаляй строки assert и не ослабляй строгую проверку до assert.ok/includes/truthiness; перед ответом перечитай свой diff по тестам и верни всё, что стало слабее: test_fit помечает это как сломанную проверку, и попытки сгорают до лимита.\n- In muse-ai-connector, every check script or test that imports bridge/ modules must set MUSE_BRIDGE_HOME to a fresh mkdtemp under /tmp before the import; never let a check write into the real ~/.muse-bridge (accounts, cookies, cache).",
+        "rulesPicked": {
+          "total": 25,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_af70160574711f7e",
+            "rule_93325eb4e64a63d7"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- server.ts L1-L456 (sha256 ff151c56)\n- host.ts L1-L340 (sha256 934e44a1)",
+        "executionPacketSha256": "8f9590786b01fc478b4bec0005d99909bc2c71c091776e30270ce4ff2359c9f5",
+        "pmReadContext": "{\"summary\":\"This task addresses premature 30-second call deadline terminations in server.ts when invoking long-running host operations through BB's experimental host RPC client. In server.ts, calls to host.call for addAccount, reloginAccount, checkAccounts, installRuntime, and usage pass hostId options without specifying timeoutMs. As a result, BB enforces its default 30-second deadline, causing operations that take minutes (such as interactive account additions or relogins which take up to 11 minutes, account health checks taking up to 120 seconds, runtime installations taking up to 5 minutes, and usage lookups taking up to 45 seconds) to fail with 'host plugin call … exceeded its deadline'. When addAccount or reloginAccount fails prematurely, subsequent account synchronization across connected hosts is blocked. The required fix is to pass appropriate timeoutMs options on each affected host.call invocation in server.ts: greater than 660,000 ms for reloginAccount and addAccount, greater than 120,000 ms for checkAccounts, greater than 300,000 ms for installRuntime, and greater than 45,000 ms (USAGE_TIMEOUT_MS) for usage. The changes are confined to server.ts and a new test file tests/host-call-timeouts.test.mjs, which must mock BB's host client and RPC registration to assert the passed timeouts using node --test. host.ts, app.tsx, and bridge/ remain out of scope.\",\"keyFacts\":[\"server.ts invokes host.call for addAccount inside oneHost passing { hostId: id } with no timeoutMs specified (server.ts L409).\",\"server.ts invokes host.call for reloginAccount passing { hostId } with no timeoutMs specified (server.ts L416).\",\"server.ts invokes host.call for checkAccounts inside oneHost passing { hostId: hid } with no timeoutMs specified (server.ts L430).\",\"server.ts invokes host.call for installRuntime inside oneHost passing { hostId: hid } with no timeoutMs specified (server.ts L436).\",\"server.ts invokes host.call for usage inside collectMergedUsage callback passing { hostId } with no timeoutMs specified (server.ts L440).\",\"host.ts defines ADD_TIMEOUT_MS as 11 * 60 * 1000 ms (660,000 ms) for account addition/login operations (host.ts L14).\",\"host.ts defines CHECK_TIMEOUT_MS as 120,000 ms for account checking operations (host.ts L15).\",\"server.ts defines and exports USAGE_TIMEOUT_MS as 45,000 ms (server.ts L129).\",\"server.ts creates the host RPC client via bb.hosts.experimental_client({ contract: hostContract }) within the plugin entry function (server.ts L198).\",\"In server.ts, reloginAccount and addAccount must complete successfully on the host before syncFrom runs to sync credentials to other hosts (server.ts L410-L418).\",\"The task brief requires timeoutMs > 660000 for reloginAccount/addAccount, > 120000 for checkAccounts, > 300000 for installRuntime, and > 45000 for usage (TASK BRIEF).\",\"The task brief mandates that tests/host-call-timeouts.test.mjs drives the server RPC handlers with a fake bb and asserts timeout values using node --test (TASK BRIEF).\",\"The task brief requires npx tsc --noEmit to exit with 0 (TASK BRIEF).\",\"host.ts, app.tsx, and bridge/ are explicitly designated out of scope (TASK BRIEF).\",\"Only server.ts and tests/host-call-timeouts.test.mjs are owned paths for this task (TASK BRIEF).\"],\"openQuestions\":[\"What specific timeoutMs margins above the host thresholds should be chosen (e.g. 700,000 ms vs 670,000 ms for add/relogin, 180,000 ms vs 130,000 ms for checkAccounts, 360,000 ms vs 310,000 ms for installRuntime, and 60,000 ms for usage)?\",\"Should new timeout constants be exported from server.ts so that tests/host-call-timeouts.test.mjs can assert against shared constant values?\",\"Does withTimeout in collectMergedUsage need any alignment with the new usage host.call timeoutMs (e.g., if withTimeout is 45,000 ms, will it reject before a 50,000 ms host.call finishes)?\",\"Do sync-related host calls (exportAccount and importAccount in callHost) require custom timeoutMs settings or should they remain untouched as they are not listed in the acceptance criteria?\",\"What minimum mock structure for BbPluginApi is expected in tests/host-call-timeouts.test.mjs to initialize plugin(bb) without side effects from runtime-warmup or provider registration?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 12057,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [],
+          "picked": [],
+          "craft": [],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {},
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "acp-cursor/grok-4.6",
+        "harness": {
+          "id": "hrn_14aaeaa16ebd5fe1",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": null,
+  "turns": 1
+}
