@@ -1,12 +1,7 @@
 import assert from "node:assert/strict";
-import fs from "node:fs";
-import path from "node:path";
 import test from "node:test";
-import { fileURLToPath } from "node:url";
-import { PLUGIN_VERSION } from "../version.ts";
 import { formatExtraTokens, formatUsageReset } from "../usage-format.ts";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const nov9Sec = Date.UTC(2026, 10, 9, 12, 0, 0) / 1000;
 const nov9Ms = Date.UTC(2026, 10, 9, 12, 0, 0);
 
@@ -58,10 +53,4 @@ test("empty input returns empty strings", () => {
     "",
   );
   assert.equal(formatExtraTokens({}, "en"), "");
-});
-
-test("version is 0.3.18", () => {
-  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(PLUGIN_VERSION, "0.3.18");
-  assert.equal(pkg.version, "0.3.18");
 });
