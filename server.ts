@@ -125,6 +125,10 @@ type HostUsageFetch = (
 ) => Promise<{ accounts: Array<{ id: string; usage: UsageSnapshot | null; error: UsageError | null }> }>;
 
 export const USAGE_TIMEOUT_MS = 45000;
+export const HOST_LOGIN_TIMEOUT_MS = 12 * 60 * 1000;
+export const HOST_CHECK_TIMEOUT_MS = 3 * 60 * 1000;
+export const HOST_INSTALL_TIMEOUT_MS = 10 * 60 * 1000;
+export const HOST_USAGE_TIMEOUT_MS = USAGE_TIMEOUT_MS + 15_000;
 
 class UsageTimeoutError extends Error {
   constructor(ms: number) {
@@ -414,14 +418,14 @@ export default function plugin(bb: BbPluginApi): void {
       return { hosts: await listHosts(hostId) };
     },
     async addAccount({ hostId, label }) {
-      const answer = await oneHost(hostId, (id) => host.call("addAccount", { label }, { hostId: id }));
+      const answer = await oneHost(hostId, (id) => host.call("addAccount", { label }, { hostId: id, timeoutMs: HOST_LOGIN_TIMEOUT_MS }));
       const created = answer.hosts[0]?.status?.accounts?.filter((a) => a.label === label && a.status === "signed_in").pop();
       if (!created) return { ...answer, synced: [] as SyncRow[] };
       const entries = await listHosts();
       return { ...answer, synced: await syncFrom(hostId, created.id, entries) };
     },
     async reloginAccount({ hostId, id }) {
-      await host.call("reloginAccount", { id }, { hostId });
+      await host.call("reloginAccount", { id }, { hostId, timeoutMs: HOST_LOGIN_TIMEOUT_MS });
       const entries = await listHosts();
       const synced = await syncFrom(hostId, id, entries);
       return { hosts: entries, synced };
@@ -438,17 +442,17 @@ export default function plugin(bb: BbPluginApi): void {
       return { hosts: entries, synced };
     },
     checkAccounts({ hostId, id }) {
-      return oneHost(hostId, (hid) => host.call("checkAccounts", id ? { id } : {}, { hostId: hid }));
+      return oneHost(hostId, (hid) => host.call("checkAccounts", id ? { id } : {}, { hostId: hid, timeoutMs: HOST_CHECK_TIMEOUT_MS }));
     },
     removeAccount({ hostId, id, purge }) {
       return oneHost(hostId, (hid) => host.call("removeAccount", { id, purge }, { hostId: hid }));
     },
     installRuntime({ hostId }) {
-      return oneHost(hostId, (hid) => host.call("installRuntime", {}, { hostId: hid }));
+      return oneHost(hostId, (hid) => host.call("installRuntime", {}, { hostId: hid, timeoutMs: HOST_INSTALL_TIMEOUT_MS }));
     },
     async usage() {
       const hosts = await listHosts();
-      const accounts = await collectMergedUsage(hosts, (hostId, id) => host.call("usage", { id }, { hostId }));
+      const accounts = await collectMergedUsage(hosts, (hostId, id) => host.call("usage", { id }, { hostId, timeoutMs: HOST_USAGE_TIMEOUT_MS }));
       return { accounts };
     },
   });
