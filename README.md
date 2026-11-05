@@ -1,6 +1,6 @@
 ---
 title: Muse AI connector
-date: 2026-11-03
+date: 2026-11-05
 ---
 
 # Muse AI connector
@@ -15,6 +15,56 @@ Licence: Apache-2.0. Requires Node 22+, npm, and Google Chrome on at least one c
 (macOS or Linux). Unofficial connector: it drives Muse the same way the muse.ai web app does.
 
 Русская версия: [ниже](#по-русски).
+
+## What you get
+
+- **Muse in BB's provider picker** — choose Muse in any chat the same way you pick other providers.
+- **Replies stream into the BB chat** — the Muse side chat is bridged; you stay in BB.
+- **Tools, MCP servers and skills run on your machine** — filesystem, bash, MCP (`mcp__<server>__<tool>`), and directory-based skills execute locally.
+- **Several Muse accounts, with parallel chats** — add more than one account; each can serve several chats at once (`Parallel chats`).
+- **Usage limits per account** — the settings screen shows plan, weekly limit used, reset date and extra tokens.
+- **One sign-in copied to all your machines** — cookies go from the Chrome machine to every connected host that has the runtime.
+
+## Quick start
+
+1. Install the plugin from the BB **marketplace** (Settings → Plugins → Store, search **Muse AI connector**) or from git `https://github.com/VKirill/muse-ai-connector.git` (Settings → Plugins → install from git). For a local checkout: `bb plugin install .`
+2. Open **Settings → Plugins → Muse** and wait for the connector runtime to install on each connected machine (the Machines list shows installed / installing).
+3. On a machine **with Chrome**, press **Add account**, sign in in the window that opens, and leave it open until the status is signed in (up to ~10 minutes).
+4. Pick **Muse** as the provider in a chat.
+
+This is **not** the **Muse Code** plugin (Meta's Muse Code CLI agent — a different marketplace entry). This connector drives the muse.ai personal assistant through your web accounts. Both register the provider id `muse`, so install only one of them.
+
+## Settings screen
+
+BB Settings → Plugins → Muse. The screen follows the BB interface language (English or Russian).
+
+```
+┌ Accounts ─────────────────────────── 5 accounts · 4 machines ── [Refresh] ┐
+│ user@example.com  (signed in)   [Sign in again] [Check] [Copy to all machines] [Remove] │
+│ Plan Muse Free                                                             │
+│ ███████████░░░░░░░  63% of weekly limit                                    │
+│ Limit resets: 9 Nov · Extra tokens: 0% used                                │
+│ Parallel chats: 20 · Last used 05.11.2026, 06:18                           │
+│ (MacBook · not signed in) (Mac Mini · not signed in) (OVH ✓ · signed in)   │
+└────────────────────────────────────────────────────────────────────────────┘
+┌ Machines ─ per machine: connector runtime, Chrome, agent, [Install] ───────┐
+```
+
+- **Add account** — on a machine with Chrome: label, then a Chrome window. A machine without Chrome points you at machines that have it; add there and the account is copied over.
+- **Sign in again** — opens Chrome on a machine that has Chrome (up to ~10 minutes). After you sign in, cookies are copied to every connected machine.
+- **Check / Check all** — refreshes signed-in status for one account or every account.
+- **Copy to all machines** — pushes this account's cookies to every other connected host (use this after an update, or when a machine is missing a signed-in copy).
+- **Remove** — drops the account from the registry. Tick **Delete Chrome profile** to also wipe `profiles/<id>/`.
+- **Refresh** — reloads the accounts and machines lists.
+- **Weekly limit meter** — plan name, bar and **% of weekly limit**, **Limit resets** date, **Extra tokens** used. **Parallel chats** is how many chats this account serves at once (1–50).
+- **Per-machine chips** under the account — which machines hold a signed-in copy (`signed in` / `not signed in`).
+- **Machine rows** — connector runtime (installed / installing / not installed), Chrome, agent. **Install** retries a failed runtime install. Windows is not supported for self-install.
+
+## Install details
+
+On each connected machine the connector runtime installs itself in the background: a versioned checkout under `~/.muse-bridge/runtime/<version>/` with `~/.muse-bridge/runtime/current` pointing at the active one, plus `musebridge` and `muse-acp` shims in `~/.muse-bridge/bin/`. Old versions beyond the last two are removed.
+
+The account's cookies are then copied to every connected machine that has a runtime, including headless servers. Check a machine manually with `musebridge doctor`.
 
 ## How it works
 
@@ -45,27 +95,6 @@ BB chat ──ACP──▶ muse-acp (on the BB machine)
 - **The BB host runs the ACP agent.** BB launches `muse-acp` (via the runtime shim at
   `~/.muse-bridge/bin/muse-acp`, or the **Agent command** plugin setting). It speaks ACP on stdio,
   maps each BB session to a Muse side chat, and executes Muse's tool calls on the machine.
-- **Settings screen:** BB Settings → Plugins → Muse lists every connected machine — connector
-  runtime, Chrome, agent — and the shared account list. The screen follows the BB interface
-  language (English or Russian).
-
-## Install
-
-1. Install the plugin in BB from the git source `VKirill/muse-ai-connector`
-   (Settings → Plugins → install from git). For a local checkout: `bb plugin install .`
-2. Open BB Settings → Plugins → Muse. On each connected machine the connector runtime installs
-   itself automatically in the background: a versioned checkout under
-   `~/.muse-bridge/runtime/<version>/` with `~/.muse-bridge/runtime/current` pointing at the
-   active one, plus `musebridge` and `muse-acp` shims in `~/.muse-bridge/bin/`. Old versions
-   beyond the last two are removed. The **Install** button retries a failed install.
-   Windows is not supported for self-install.
-3. On a machine **with Chrome**, type a label and press **Add account**. A Chrome window opens;
-   sign in to Muse and leave the window open until the status turns signed in (up to ~10 minutes).
-   The account's cookies are then copied to every connected machine that has a runtime, including
-   headless servers.
-4. Pick **Muse** as the provider in any chat on any of those machines.
-
-Check a machine manually with `musebridge doctor`.
 
 ## Accounts
 
@@ -74,14 +103,14 @@ Chrome profiles under `profiles/<id>/`, `accounts/<id>/cookies.json` (mode 0600)
 `locks/`, and `sessions.json` (BB session → Muse chat mapping). Cookie and token values are never
 logged; during account sync they travel host → hub memory → host and are never stored on the hub.
 
-- **Add account** — on a machine with Chrome; see Install above. A machine without Chrome shows
-  which machines have it: add the account there and it is copied over automatically.
+- **Add account** — on a machine with Chrome; see Quick start and Settings screen above.
 - **Check / Check all** — refreshes the signed-in status.
 - **Copy to all machines** — pushes the account's cookies to every other connected host.
 - **Remove** — drops the account from the registry; tick **Delete Chrome profile** to also wipe
   `profiles/<id>/`.
 - **Refresh** — `musebridge accounts refresh <id>` re-exports cookies from the signed-in Chrome
-  profile without signing in again. Re-login is needed roughly monthly or after a Meta checkpoint.
+  profile without signing in again. Re-login (**Sign in again**) is needed roughly monthly or after
+  a Meta checkpoint.
 - **Machines outside BB** can receive the cookies over ssh: `musebridge sync targets add <name>`,
   then `musebridge sync` (or it runs automatically after add/refresh).
 
@@ -167,7 +196,7 @@ musebridge accounts export <id> --json      # print {id, label, cookies} (host R
 musebridge accounts set <id> --max-parallel <n>
                                             # how many chats the account serves at once (1..50)
 musebridge sync targets add <name>          # add an ssh host that receives refreshed cookies
-musebridge sync targets remove <name>       # remove an ssh sync target
+musebridge sync targets remove <name>       # remove an ssh host
 musebridge sync targets list                # show the ssh sync targets
 musebridge sync [--account <id>]            # push saved cookies to every sync target
 musebridge login                            # sign in (adds account "default" when none exist)
@@ -220,8 +249,8 @@ account all finished.
   look at that machine's row: the Connector line shows installed/installing/not installed. Press
   **Install** if needed, then give BB a few minutes — provider lists are cached.
 - **"No signed-in Muse account"** — press **Check** in settings; if the account is signed out,
-  sign in again with **Add account** (or `musebridge accounts refresh <id>` when the Chrome
-  profile is still valid).
+  use **Sign in again** (or `musebridge accounts refresh <id>` when the Chrome profile is still
+  valid).
 - **"All Muse accounts are busy"** — wait, raise `maxParallel`, or add another account.
 - **Runtime install failed** — the settings row shows the error tail (download, `tar`, or
   `npm install --omit=dev`). Fix Node/npm/network for the host daemon and press **Install**.
@@ -230,6 +259,10 @@ account all finished.
   full path of `muse-acp`.
 - **A money approval card pauses the chat** — answer it in Muse itself, or run
   `musebridge approve --account <id> --chat <id>` for the remaining cards.
+- **`host plugin call … exceeded its deadline`** — up to **0.3.18** the hub waited only BB's
+  default 30 s for a machine, so **Sign in again**, **Add account** or **Check** could fail with
+  this text while the sign-in still ran. **0.3.19** fixes it: each call now waits as long as the
+  machine needs. On older versions: update the plugin, then press **Copy to all machines**.
 
 ## Development
 
@@ -260,6 +293,60 @@ accepts `dir:<path>` as a source for local installs.
 Лицензия: Apache-2.0. Нужны Node 22+, npm и Google Chrome хотя бы на одной подключённой машине
 (macOS или Linux). Коннектор неофициальный: он управляет Muse так же, как веб-приложение muse.ai.
 
+### Что даёт
+
+- **Muse в выборе провайдера BB** — в чате выбираете Muse так же, как других провайдеров.
+- **Ответы стримятся в чат BB** — боковой чат Muse связан с BB; вы остаётесь в BB.
+- **Инструменты, MCP и скиллы выполняются на вашей машине** — файлы, bash, MCP (`mcp__<server>__<tool>`), скиллы из каталогов.
+- **Несколько аккаунтов Muse и параллельные чаты** — можно добавить больше одного аккаунта; у каждого свой лимит **Параллельные чаты**.
+- **Лимиты использования по аккаунту** — на экране настроек видны тариф, доля недельного лимита, дата сброса и доп. токены.
+- **Один вход копируется на все машины** — куки с машины с Chrome уходят на каждый подключённый хост с рантаймом.
+
+### Быстрый старт
+
+1. Установите плагин из **marketplace** BB (Настройки → Плагины → Store, поиск **Muse AI connector**) или из git `https://github.com/VKirill/muse-ai-connector.git` (Настройки → Плагины → установить из git). Для локальной копии: `bb plugin install .`
+2. Откройте **Настройки → Плагины → Muse** и дождитесь установки рантайма коннектора на каждой подключённой машине (в списке Машины видно «установлен» / «устанавливаю»).
+3. На машине **с Chrome** нажмите **Добавить аккаунт**, войдите в открывшемся окне и не закрывайте его, пока статус не станет «вошёл» (до ~10 минут).
+4. Выберите **Muse** провайдером в чате.
+
+Это **не** плагин **Muse Code** (CLI-агент Muse Code от Meta — другая карточка в marketplace). Этот коннектор управляет персональным ассистентом muse.ai через ваши веб-аккаунты. Оба регистрируют provider id `muse`, поэтому ставьте только один из них.
+
+### Экран настроек
+
+Настройки BB → Плагины → Muse. Язык экрана следует языку интерфейса BB (English или Русский).
+
+```
+┌ Аккаунты ─────────────────────────── 5 аккаунтов · 4 машины ── [Обновить] ┐
+│ user@example.com  (вошёл)   [Войти заново] [Проверить] [Скопировать на все машины] [Удалить] │
+│ Тариф Muse Free                                                             │
+│ ███████████░░░░░░░  63% недельного лимита                                    │
+│ Сброс лимита: 9 Nov · Доп. токены: 0% использовано                          │
+│ Параллельные чаты: 20 · Последний раз 05.11.2026, 06:18                     │
+│ (MacBook · не вошёл) (Mac Mini · не вошёл) (OVH ✓ · вошёл)                   │
+└────────────────────────────────────────────────────────────────────────────┘
+┌ Машины ─ на машину: рантайм коннектора, Chrome, агент, [Установить] ───────┐
+```
+
+- **Добавить аккаунт** — на машине с Chrome: подпись, затем окно Chrome. На машине без Chrome видно, где он есть; добавьте там — аккаунт скопируется.
+- **Войти заново** — открывает Chrome на машине с Chrome (до ~10 минут). После входа куки копируются на все подключённые машины.
+- **Проверить / Проверить все** — обновляет статус входа у одного аккаунта или у всех.
+- **Скопировать на все машины** — отправляет куки этого аккаунта на остальные подключённые хосты (после обновления плагина или если на машине нет вошедшей копии).
+- **Удалить** — снимает аккаунт из реестра. Галочка **Удалить профиль Chrome** ещё и стирает `profiles/<id>/`.
+- **Обновить** — перечитывает списки аккаунтов и машин.
+- **Счётчик недельного лимита** — тариф, полоса и **% недельного лимита**, **Сброс лимита**, **Доп. токены**. **Параллельные чаты** — сколько чатов аккаунт обслуживает сразу (1–50).
+- **Чипы по машинам** под аккаунтом — на каких машинах лежит вошедшая копия (**вошёл** / **не вошёл**).
+- **Строки машин** — рантайм коннектора (установлен / устанавливаю / не установлен), Chrome, агент. **Установить** повторяет упавшую установку. Windows для самоустановки не поддерживается.
+
+### Подробности установки
+
+На каждой подключённой машине рантайм коннектора ставится сам в фоне: версионная копия в
+`~/.muse-bridge/runtime/<version>/` с ссылкой `~/.muse-bridge/runtime/current` на активную, плюс
+шимы `musebridge` и `muse-acp` в `~/.muse-bridge/bin/`. Старые версии сверх последних двух
+удаляются.
+
+Куки аккаунта затем копируются на каждую подключённую машину с рантаймом, включая серверы без
+дисплея. Проверить машину вручную: `musebridge doctor`.
+
 ### Как это устроено
 
 ```
@@ -288,25 +375,6 @@ accepts `dir:<path>` as a source for local installs.
 - **Хост BB запускает ACP-агента.** BB стартует `muse-acp` (через шим `~/.muse-bridge/bin/muse-acp`
   или настройку **Agent command**). Агент говорит ACP по stdio, связывает сессию BB с боковым чатом
   Muse и выполняет вызовы инструментов на машине.
-- **Экран настроек:** Настройки BB → Плагины → Muse показывает каждую подключённую машину —
-  рантайм коннектора, Chrome, агент — и общий список аккаунтов. Язык экрана следует языку
-  интерфейса BB (English или Русский).
-
-### Установка
-
-1. Установите плагин в BB из git-источника `VKirill/muse-ai-connector`
-   (Настройки → Плагины → установить из git). Для локальной копии: `bb plugin install .`
-2. Откройте Настройки → Плагины → Muse. На каждой подключённой машине рантайм коннектора ставится
-   сам в фоне: версионная копия в `~/.muse-bridge/runtime/<version>/` с ссылкой
-   `~/.muse-bridge/runtime/current` на активную, плюс шимы `musebridge` и `muse-acp` в
-   `~/.muse-bridge/bin/`. Старые версии сверх последних двух удаляются. Кнопка **Установить**
-   повторяет упавшую установку. Windows не поддерживается.
-3. На машине **с Chrome** введите подпись и нажмите **Добавить аккаунт**. Откроется окно Chrome;
-   войдите в Muse и не закрывайте его, пока статус не станет «вошёл» (до ~10 минут). Куки аккаунта
-   затем копируются на каждую подключённую машину с рантаймом, включая серверы без дисплея.
-4. Выберите **Muse** провайдером в любом чате на любой из этих машин.
-
-Проверить машину вручную: `musebridge doctor`.
 
 ### Аккаунты
 
@@ -316,15 +384,14 @@ accepts `dir:<path>` as a source for local installs.
 пишутся в логи; при синхронизации аккаунта куки идут хост → память хаба → хост и на хабе не
 сохраняются.
 
-- **Добавить аккаунт** — на машине с Chrome, см. Установку. На машине без Chrome видно, где он
-  есть: добавьте аккаунт там — он скопируется сам.
+- **Добавить аккаунт** — на машине с Chrome, см. Быстрый старт и Экран настроек.
 - **Проверить / Проверить все** — обновляет статус входа.
 - **Скопировать на все машины** — отправляет куки аккаунта на остальные подключённые хосты.
 - **Удалить** — снимает аккаунт из реестра; галочка «Удалить профиль Chrome» ещё и стирает
   `profiles/<id>/`.
 - **Обновить** — `musebridge accounts refresh <id>` заново выгружает куки из вошедшего профиля
-  Chrome без повторного входа. Перелогин нужен примерно раз в месяц или после контрольной точки
-  Meta.
+  Chrome без повторного входа. Перелогин (**Войти заново**) нужен примерно раз в месяц или после
+  контрольной точки Meta.
 - **Машины вне BB** могут получать куки по ssh: `musebridge sync targets add <name>`, затем
   `musebridge sync` (или автоматически после add/refresh).
 
@@ -466,8 +533,7 @@ muse-acp                                    # ACP-агент на stdio (зап�
   Нажмите **Установить** при необходимости и подождите несколько минут — списки провайдеров
   кэшируются.
 - **«No signed-in Muse account»** — нажмите **Проверить** в настройках; если аккаунт не вошёл,
-  войдите снова через **Добавить аккаунт** (или `musebridge accounts refresh <id>`, пока жив
-  профиль Chrome).
+  используйте **Войти заново** (или `musebridge accounts refresh <id>`, пока жив профиль Chrome).
 - **«All Muse accounts are busy»** — подождите, поднимите `maxParallel` или добавьте ещё аккаунт.
 - **Установка рантайма упала** — в строке настроек виден хвост ошибки (загрузка, `tar` или
   `npm install --omit=dev`). Почините Node/npm/сеть для хост-демона и нажмите **Установить**.
@@ -476,6 +542,11 @@ muse-acp                                    # ACP-агент на stdio (зап�
   полный путь к `muse-acp`.
 - **Карточка про деньги приостановила чат** — ответьте на неё в самом Muse или выполните
   `musebridge approve --account <id> --chat <id>` для оставшихся карточек.
+- **`host plugin call … exceeded its deadline`** — до **0.3.18** хаб ждал машину только
+  стандартные 30 с BB, поэтому **Войти заново**, **Добавить аккаунт** или **Проверить** могли
+  упасть с этим текстом, пока вход ещё шёл. **0.3.19** это чинит: каждый вызов ждёт столько,
+  сколько нужно машине. На старых версиях: обновите плагин, затем нажмите **Скопировать на все
+  машины**.
 
 ### Разработка
 
