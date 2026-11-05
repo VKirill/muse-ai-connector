@@ -1,0 +1,176 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted",
+  "lanePilotRunId": "lprun_f3ade39b014a491fb0abff5691724bca",
+  "lanePilotTaskId": "muse-readme-guide",
+  "attemptId": "lpattempt_6cb7508fdcc0440b92c641dd2d9b9895",
+  "pmThreadId": "thr_x7d6rg2uiu",
+  "writerThreadId": "thr_yz2i4a6g6r",
+  "ownsPaths": [
+    "README.md"
+  ],
+  "readFirst": [
+    {
+      "path": "README.md",
+      "windows": []
+    },
+    {
+      "path": "i18n.ts",
+      "windows": []
+    },
+    {
+      "path": "app.tsx",
+      "windows": []
+    },
+    {
+      "path": "server.ts",
+      "windows": []
+    }
+  ],
+  "output": "Обновлён GitHub README: что даёт плагин, быстрый старт из marketplace, гид по экрану настроек (EN+RU), отличие от Muse Code и правка `exceeded its deadline` в 0.3.19. Технические разделы сохранены.\n\nИзменённый путь: `README.md`\n\n`node /tmp/muse-readme/check.mjs` завершился с кодом 0.\n\n```plan-fact\n[\n  {\"item\":1,\"status\":\"done\",\"evidence\":[\"README.md:19-25\",\"README.md:28-35\",\"README.md:37-61\"]},\n  {\"item\":2,\"status\":\"done\",\"evidence\":[\"README.md:43-60\",\"README.md:54-60\"]},\n  {\"item\":3,\"status\":\"done\",\"evidence\":[\"README.md:35\"]},\n  {\"item\":4,\"status\":\"done\",\"evidence\":[\"README.md:262-266\",\"README.md:545-549\"]},\n  {\"item\":5,\"status\":\"done\",\"evidence\":[\"README.md:305-312\",\"README.md:314-337\",\"README.md:320-322\"]},\n  {\"item\":6,\"status\":\"done\",\"evidence\":[\"cmd:node /tmp/muse-readme/check.mjs\"]}\n]\n```\n\nAPPROACH: Inserted marketplace-facing sections after the intro in both languages, kept the existing technical body, and matched settings labels to `i18n.ts`.\nLESSON: The marketplace README must name the Muse Code collision (`provider id muse`) and the 0.3.19 host-deadline error, or listing readers will mix plugins and stale timeouts.",
+  "verification": [
+    {
+      "command": "node /tmp/muse-readme/check.mjs",
+      "exitCode": 0,
+      "stdout": "ok README\r\n",
+      "stderr": "",
+      "sandboxBackend": "macos-seatbelt",
+      "policySha256": "56fd60fecf502e16680168f01ac03df915718ab9c86410aa4d7a49740a0c4e2c",
+      "workspacePath": "/Users/vechkasov/.lane-pilot/worktrees/lpattempt_6cb7508fdcc0440b92c641dd2d9b9895/muse-ai-connector",
+      "revision": {
+        "head": "c88b2c8d43824e07ba8de1e7a605706c82746b9c",
+        "dirty": 1
+      }
+    }
+  ],
+  "runV2": {
+    "schemaVersion": 1,
+    "pools": {
+      "provider": 15,
+      "verification": 2
+    },
+    "score": 2,
+    "risk": "low",
+    "sourceRisk": "low",
+    "scoreAdapter": "task-risk-v1"
+  },
+  "reasoning": [
+    {
+      "planSha256": "c9fe31ba19de1f58e97bcd92a85ad030aaf74bf3afd7b724eab378c9aa23317c",
+      "sentPlanSha256": null,
+      "sourceLength": 4894,
+      "sentLength": null,
+      "jevStatus": "disabled",
+      "jevDecision": null,
+      "requestedReasoningLevel": "medium",
+      "effectiveReasoningLevel": "medium",
+      "fallbackReason": "jev_disabled;jev_disabled_by_project_setting",
+      "retryEffort": {
+        "enabled": false,
+        "retryIndex": 0,
+        "before": "medium",
+        "after": "medium",
+        "changed": false
+      },
+      "providerId": "acp-cursor",
+      "model": "grok-4.6",
+      "serviceTier": "default",
+      "requestedServiceTier": "default",
+      "runId": "lprun_f3ade39b014a491fb0abff5691724bca",
+      "attemptId": "lpattempt_6cb7508fdcc0440b92c641dd2d9b9895",
+      "threadId": "thr_yz2i4a6g6r",
+      "effortMode": "manual",
+      "selectionSource": {
+        "providerId": "acp-cursor",
+        "model": "grok-4.6",
+        "reasoningLevel": "medium",
+        "serviceTier": "default",
+        "reasoningLevelSource": "explicit"
+      },
+      "dispatchContext": {
+        "memoryText": "Area «muse-docs»: earlier accepted tasks, newest first. Their decisions are in main; keep them unless this task changes them.\n- 2026-11-03T13:01 muse-readme: README: the whole service and how the plugin works (EN + RU). A new user understands from the README what the Muse connector is, how it works and how to install and use it.\nFiles of this area: README.md",
+        "memoryPicked": [],
+        "rulesText": "- In verification scripts and tests that create temp dirs, use /tmp explicitly (mktemp -d /tmp/x.XXXXXX, or TMPDIR=/tmp): the writer sandbox denies mkdtemp in the system TMPDIR under /var/folders. Keep PM-written check scripts in /tmp/<name>/ (the guard blocks .mjs under .agents/).\n- In a folder without git (live-folder mode), never put a task's expected_outputs or owns_paths under .bb/ (chat folders): the live snapshot skips .bb, so a file written there is never counted as produced and the task blocks as missing expected_outputs. Put task deliverables in a project folder such as docs/ or reports/.\n- When a Muse chat the connector drives shows an approval card, answer it «Always allow» (never Deny, never one-time Allow); only cards about money (purchase, payment, subscription) go to the owner.\n- Правя тестовый файл из owns_paths, меняй только ожидаемые значения внутри существующих строгих assert (deepEqual/equal) и добавляй новые проверки рядом — не удаляй строки assert и не ослабляй строгую проверку до assert.ok/includes/truthiness; перед ответом перечитай свой diff по тестам и верни всё, что стало слабее: test_fit помечает это как сломанную проверку, и попытки сгорают до лимита.\n- In muse-ai-connector, every check script or test that imports bridge/ modules must set MUSE_BRIDGE_HOME to a fresh mkdtemp under /tmp before the import; never let a check write into the real ~/.muse-bridge (accounts, cookies, cache).\n- In BB plugin CSS never derive paddings or gaps from var(--spacing): BB runs Tailwind v4 where --spacing is 4px. Define the plugin's own spacing tokens with concrete px values (gap 16, page padding 24, card padding 20) and give plugin UI plans a spacing table plus ASCII mocks for every page.",
+        "rulesPicked": {
+          "total": 25,
+          "picked": [
+            "rule_501a857c9b1bd60a",
+            "rule_df3e34f2aef5a993",
+            "rule_fd97fb910fa54786",
+            "rule_af70160574711f7e",
+            "rule_93325eb4e64a63d7",
+            "rule_e8336cd3bb414e7c"
+          ]
+        },
+        "executionPacket": "Read these before editing; they are the context for this task:\n- README.md L1-L498 (sha256 31b0f540)",
+        "executionPacketSha256": "7aa2fcd2bf41412bd7500cf189b89e3de2b1c481dfc2da3e4f06b3245d19aac2",
+        "pmReadContext": "{\"summary\":\"The task brief requires updating README.md to provide marketplace-ready documentation in both English and Russian, covering plugin capabilities, a quick-start guide, and a comprehensive settings screen guide with an ASCII mock. Key acceptance criteria include: (1) adding '## What you get', '## Quick start', and '## Settings screen' sections with an ASCII mock of the settings UI in the English half; (2) detailing specific controls: Sign in again, Check, Copy to all machines, Remove, the weekly limit meter, Parallel chats, and per-machine chips; (3) explicitly distinguishing this plugin from the Muse Code plugin while noting that both share the provider ID 'muse'; (4) updating Troubleshooting in both language sections to cite the 'exceeded its deadline' error and state that version 0.3.19 resolves it; (5) adding '### Быстрый старт' and '### Экран настроек' in the Russian section using localized strings 'Войти заново' and 'недельного лимита'; and (6) ensuring validation script 'node /tmp/muse-readme/check.mjs' passes with exit code 0. Scope is strictly confined to README.md without code changes or image files.\\n\\nThe supplied excerpt from README.md (lines 1–498) details the technical mechanics, architecture, CLI, and configuration of the connector, but does not yet meet the new marketplace and settings guide structure. In the English half, README.md currently covers high-level operation ('## How it works'), manual installation ('## Install'), account management ('## Accounts'), parallel slots ('### Parallel slots'), ACP agent behavior ('## The agent in BB chats'), CLI commands, environment variables, measured performance benchmarks, limits/risks, troubleshooting, and development pointers. The Russian section ('## По-русски') mirrors the technical sections ('### Как это устроено', '### Установка', '### Аккаунты', '#### Параллельные слоты') and truncates mid-sentence at line 498 in '### Агент в чатах BB'.\\n\\nCrucially, the current README lacks the requested user-oriented sections: '## What you get', '## Quick start', and '## Settings screen', has no ASCII mockup of the settings interface, lacks coverage of the weekly limit meter and per-machine status chips, does not mention the Muse Code plugin disambiguation, does not mention the 'exceeded its deadline' troubleshooting entry for 0.3.19, and lacks the corresponding Russian sections '### Быстрый старт' and '### Экран настроек'. Furthermore, while the task brief lists `i18n.ts`, `app.tsx`, and `server.ts` under read_first, their source code was omitted from the host-read execution packet.\",\"keyFacts\":[\"README.md: Muse AI connector registers Muse (muse.ai) as a BB provider, streaming responses from a Muse side chat into BB with local tools, MCP servers, and skills.\",\"README.md: The plugin requires Node 22+, npm, and Google Chrome on at least one connected machine (macOS or Linux), operating under the Apache-2.0 license.\",\"README.md: By default, the connector communicates via an API transport over HTTPS and a Noise_XX_25519_AESGCM_SHA256 encrypted WebSocket tunnel directly to the user's Muse VM without needing Chrome per message.\",\"README.md: Google Chrome (via playwright-core) serves as the sign-in mechanism and fallback transport when cookies are missing or HTTP 401/403 errors occur.\",\"README.md: The BB host launches `muse-acp` via stdio ACP, which bridges each BB session to a Muse side chat and coordinates local tool executions.\",\"README.md: Connector state is stored in `~/.muse-bridge/` (configurable via `MUSE_BRIDGE_HOME`), containing `accounts.json`, Chrome profiles, cookies (mode 0600), slot locks, and `sessions.json`.\",\"README.md: Account management features include Add account, Check/Check all, Copy to all machines, Remove (with optional Chrome profile deletion), Refresh, and SSH-based sync to non-BB machines.\",\"README.md: Accounts support parallel chats via `maxParallel` (default 1, range 1–50), using slot locks in `~/.muse-bridge/locks/` that expire after 30 minutes or process exit.\",\"README.md: The agent communicates tool calls using fenced ```muse-tool blocks (up to 8 per reply), supporting local filesystem/bash tools, MCP servers (`mcp__<server>__<tool>`), and directory-based skills.\",\"README.md: System instructions and project rules forwarded from BB to Muse are capped at 16 KB, and tool execution loops are limited to `MUSE_MAX_TOOL_ROUNDS` (default 60).\",\"README.md: Action approval dialogs from Muse are automatically answered with 'Always allow', whereas money/payment/subscription approvals are left for manual user intervention.\",\"README.md: Supported models are `muse-spark` (default text/tool model) and `muse-image` (generates images saved locally to `<workspace>/muse-images/`).\",\"README.md: The settings UI at BB Settings → Plugins → Muse lists connected machines (runtime, Chrome, agent status) and shared accounts in English or Russian.\",\"README.md: The repository structure includes `server.ts` (hub plugin entry/RPC), `host.ts` (machine host entry), `app.tsx` and `i18n.ts` (settings UI), `bin/` (CLI and ACP agent), and `bridge/` (shared ESM modules).\",\"README.md: The Russian documentation section begins at line 203 with `# По-русски`, currently translating technical overview, installation, accounts, and agent mechanics until truncating at line 498.\"],\"openQuestions\":[\"What exact visual structure, labels, and ASCII layout for the settings screen are expected by the acceptance criteria and `/tmp/muse-readme/check.mjs`, given that `app.tsx` was not provided in the excerpts?\",\"What are the exact English and Russian localized strings defined in `i18n.ts` for controls like Sign in again ('Войти заново'), weekly limit meter ('недельного лимита'), Check, Copy to all machines, and per-machine chips?\",\"What specific assertion checks, regex patterns, or section headers are tested in `/tmp/muse-readme/check.mjs`?\",\"What content exists in `README.md` beyond line 498 in the untruncated file?\",\"Should '## Quick start' and '### Быстрый старт' replace the existing '## Install' and '### Установка' sections, or are they distinct sections to be placed before/alongside them?\",\"Where in the text should the distinction between this connector and the Muse Code plugin (sharing provider id 'muse') be stated?\",\"Under what specific scenario does the 'exceeded its deadline' error occur, and what exact phrasing is expected for the note indicating that version 0.3.19 fixes it?\"]}",
+        "agent": "Lane Pilot writer",
+        "promptChars": 12373,
+        "helperMode": "roles",
+        "helperRequired": false,
+        "skillPick": {
+          "enabled": true,
+          "skills": [
+            "bb-plugin-authoring",
+            "submit-a-plugin",
+            "copywriter",
+            "ru-check",
+            "ru-score"
+          ],
+          "picked": [
+            {
+              "name": "bb-plugin-authoring",
+              "p": 0.72
+            },
+            {
+              "name": "submit-a-plugin",
+              "p": 0.42
+            }
+          ],
+          "craft": [
+            {
+              "name": "copywriter",
+              "p": 0.95
+            },
+            {
+              "name": "ru-check",
+              "p": 0.94
+            },
+            {
+              "name": "ru-score",
+              "p": 0.94
+            }
+          ],
+          "projectFolder": [],
+          "hints": [],
+          "sources": {
+            "bb-plugin-authoring": "/home/ubuntu/.local/share/bb-server-runtime-0.48.1-vk.4/node_modules/bb-app/server/dist/builtin-plugins/bb-guide/skills/bb-plugin-authoring",
+            "submit-a-plugin": "/home/ubuntu/.local/share/bb-server-runtime-0.48.1-vk.4/node_modules/bb-app/server/dist/builtin-plugins/bb-guide/skills/submit-a-plugin",
+            "copywriter": "/Users/vechkasov/.bb/skills/copywriter",
+            "ru-check": "/Users/vechkasov/.bb/skills/ru-check",
+            "ru-score": "/Users/vechkasov/.bb/skills/ru-score"
+          },
+          "reason": null,
+          "materialized": []
+        },
+        "writerKey": "acp-cursor/grok-4.6",
+        "harness": {
+          "id": "hrn_b01707e37ae997e1",
+          "arm": null,
+          "alwaysOnChars": 0,
+          "skills": [],
+          "checks": [],
+          "materialize": null
+        }
+      }
+    }
+  ],
+  "emergencyFallback": {
+    "reason": "writer_model_unavailable:devin/swe-2-flash-high",
+    "primaryAttemptId": "lpattempt_91949e194269402499a088eb6cf948aa",
+    "providerId": "acp-cursor",
+    "model": "grok-4.6"
+  },
+  "turns": 1
+}

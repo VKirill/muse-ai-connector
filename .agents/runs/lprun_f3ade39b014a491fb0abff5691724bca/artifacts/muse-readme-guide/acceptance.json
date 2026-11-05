@@ -1,0 +1,15 @@
+{
+  "schema_version": 2,
+  "task_id": "muse-readme-guide",
+  "task_sha256": "579340ab8ffd19c9074a169f205be034754c03640ac2a3b0749a1eb3f1804eb6",
+  "attempt": 4,
+  "provider_exit": 0,
+  "report": "complete",
+  "report_sha256": "a4f58397e93d43246ce5db22edeac60511a9f5121590898bc8d1ff4fcc8ef460",
+  "owns_check": "passed",
+  "verification": "passed",
+  "review": "passed",
+  "accepted": true,
+  "accepted_at": "2026-11-05T15:13:02.556Z",
+  "model": "grok-4.6"
+}
