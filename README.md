@@ -187,6 +187,8 @@ musebridge approve [--account <id>] --chat <id>
                                             # cards about money are left to you)
 musebridge accounts list [--json]           # list Muse accounts (busy/max slots, locked)
 musebridge accounts add <label>             # register an account and open a sign-in window
+musebridge accounts auto-login [<id>] [--force] [--headed] [--batch <file|->] [--max-parallel <n>] [--json]
+                                            # sign in automatically via IMAP OTP (reads BB Env Catalog by default)
 musebridge accounts remove <id> [--purge]   # remove an account from the registry
 musebridge accounts check [<id>]            # refresh signed-in status
 musebridge accounts refresh <id>            # export cookies from the signed-in Chrome profile
@@ -470,6 +472,8 @@ musebridge approve [--account <id>] --chat <id>
                                             # карточки про деньги остаются вам)
 musebridge accounts list [--json]           # список аккаунтов (слоты busy/max, locked)
 musebridge accounts add <label>             # зарегистрировать аккаунт и открыть окно входа
+musebridge accounts auto-login [<id>] [--force] [--headed] [--batch <file|->] [--max-parallel <n>] [--json]
+                                            # автовход по коду из IMAP (по умолчанию читает BB Env Catalog)
 musebridge accounts remove <id> [--purge]   # убрать аккаунт из реестра
 musebridge accounts check [<id>]            # обновить статус входа
 musebridge accounts refresh <id>            # выгрузить куки из вошедшего профиля Chrome

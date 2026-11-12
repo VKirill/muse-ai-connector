@@ -23,6 +23,12 @@ import { extractImages, imagePrompt, saveImages } from "../bridge/images.mjs";
 import { openTransport, resolveTransport } from "../bridge/protocol/api.mjs";
 import { chromeExecutable, openSession } from "../bridge/session.mjs";
 import { addTarget, listTargets, removeTarget, syncAccount, syncAll, syncIfTargets } from "../bridge/sync.mjs";
+import {
+  autoLoginAccount,
+  loadCredentialsFromEnvCatalog,
+  parseCredentialLines,
+  syncBbHubAccounts,
+} from "../bridge/auto-login.mjs";
 import { fetchAccountUsage } from "../bridge/usage.mjs";
 
 const HELP = `Usage: musebridge <command>
@@ -46,6 +52,8 @@ Commands:
   accounts list [--json]    List Muse accounts
   accounts add <label>      Register an account and open a sign-in window
   accounts login <id>       Open a sign-in window for an existing account
+  accounts auto-login [<id>] [--force] [--headed] [--max-parallel <n>] [--batch <file|->] [--json]
+                            Sign in automatically via email + IMAP OTP (Env Catalog or --batch)
   accounts remove <id> [--purge]
                             Remove an account from the registry
   accounts check [<id>]     Refresh signed-in status
@@ -769,6 +777,146 @@ async function cmdSync(args) {
   if (ok === 0) process.exit(1);
 }
 
+export async function cmdAccountsAutoLogin(args, deps = {}) {
+  const asJson = takeFlag(args, "--json");
+  const force = takeFlag(args, "--force");
+  const headed = takeFlag(args, "--headed");
+  const passwordStdin = takeFlag(args, "--password-stdin");
+  const batchSource = takeOption(args, "--batch");
+  const emailOpt = takeOption(args, "--email");
+  const imapHostOpt = takeOption(args, "--imap-host");
+  const maxParallelRaw = takeOption(args, "--max-parallel");
+  const idArg = args[0] ?? null;
+
+  let maxParallel;
+  if (maxParallelRaw !== null) {
+    maxParallel = Number(maxParallelRaw);
+    if (!Number.isInteger(maxParallel) || maxParallel < 1 || maxParallel > 50) {
+      process.stderr.write(`Bad --max-parallel value: ${maxParallelRaw} (expected an integer 1..50)\n`);
+      process.exit(1);
+    }
+  }
+
+  const runOne = deps.autoLoginAccount ?? autoLoginAccount;
+  const loadCatalog = deps.loadCredentialsFromEnvCatalog ?? loadCredentialsFromEnvCatalog;
+  const hubSync = deps.syncBbHubAccounts ?? syncBbHubAccounts;
+
+  /** @type {Array<{ accountId?: string, email: string, password: string, imapHost?: string }>} */
+  const jobs = [];
+
+  if (batchSource) {
+    const raw = batchSource === "-" ? await readStdin() : fs.readFileSync(batchSource, "utf8");
+    for (const item of parseCredentialLines(raw)) {
+      jobs.push({
+        email: item.email,
+        password: item.password,
+        imapHost: imapHostOpt || item.imapHost,
+      });
+    }
+    if (jobs.length === 0) {
+      process.stderr.write("No valid `<email> <password>` lines found in --batch input.\n");
+      process.exit(1);
+    }
+  } else if (emailOpt) {
+    const password = passwordStdin ? (await readStdin()).trim() : String(process.env.MUSE_IMAP_PASSWORD ?? "").trim();
+    if (!password) {
+      process.stderr.write("Pass --password-stdin or set MUSE_IMAP_PASSWORD with --email.\n");
+      process.exit(1);
+    }
+    jobs.push({ accountId: idArg ?? undefined, email: emailOpt, password, imapHost: imapHostOpt ?? undefined });
+  } else {
+    const all = listAccounts();
+    if (idArg) {
+      const targets = all.filter((a) => a.id === idArg || a.label.toLowerCase() === idArg.toLowerCase());
+      if (targets.length === 0) {
+        process.stderr.write(`Unknown account: ${idArg}\n`);
+        process.exit(1);
+      }
+      const catalog = await loadCatalog(targets.map((a) => a.label));
+      for (const acc of targets) {
+        const cred = catalog.get(acc.label.trim().toLowerCase());
+        jobs.push({
+          accountId: acc.id,
+          email: cred?.email ?? acc.label,
+          password: cred?.password ?? "",
+          imapHost: imapHostOpt || cred?.imapHost,
+        });
+      }
+    } else {
+      const emailAccounts = all.filter((a) => a.label.includes("@"));
+      const catalog = await loadCatalog(
+        emailAccounts.map((a) => a.label),
+        { includeTaggedMuse: true },
+      );
+      const knownEmails = new Set(emailAccounts.map((a) => a.label.trim().toLowerCase()));
+      for (const acc of emailAccounts) {
+        if (!force && acc.status === "signed_in") continue;
+        const cred = catalog.get(acc.label.trim().toLowerCase());
+        jobs.push({
+          accountId: acc.id,
+          email: cred?.email ?? acc.label,
+          password: cred?.password ?? "",
+          imapHost: imapHostOpt || cred?.imapHost,
+        });
+      }
+      for (const [key, cred] of catalog.entries()) {
+        if (knownEmails.has(key)) continue;
+        jobs.push({
+          email: cred.email,
+          password: cred.password,
+          imapHost: imapHostOpt || cred.imapHost,
+        });
+      }
+      if (jobs.length === 0) {
+        if (asJson) process.stdout.write(`${JSON.stringify({ accounts: [], syncedHub: false }, null, 2)}\n`);
+        else process.stdout.write("All email accounts are already signed in (use --force to re-login).\n");
+        return;
+      }
+    }
+  }
+
+  const results = [];
+  let failed = 0;
+  for (const job of jobs) {
+    if (!job.password) {
+      failed += 1;
+      const errMsg = `No mailbox password in Env Catalog for ${job.email}`;
+      results.push({ id: job.accountId ?? null, email: job.email, ok: false, error: errMsg });
+      if (!asJson) process.stderr.write(`${job.accountId ?? job.email}\tfailed: ${errMsg}\n`);
+      continue;
+    }
+    try {
+      const r = await runOne({
+        accountId: job.accountId,
+        email: job.email,
+        password: job.password,
+        imapHost: job.imapHost,
+        maxParallel,
+        headless: !headed,
+        force,
+      });
+      results.push({ id: r.id, email: r.email, ok: true, status: r.status, cookiesCount: r.cookiesCount });
+      if (!asJson) process.stdout.write(`${r.id}\t${r.status}\t${r.cookiesCount} cookies\n`);
+    } catch (err) {
+      failed += 1;
+      const msg = String(err?.message ?? err);
+      results.push({ id: job.accountId ?? null, email: job.email, ok: false, error: msg });
+      if (!asJson) process.stderr.write(`${job.accountId ?? job.email}\tfailed: ${msg}\n`);
+    }
+  }
+
+  let syncedHub = false;
+  if (results.some((r) => r.ok)) {
+    const hubRes = await hubSync();
+    syncedHub = Boolean(hubRes);
+  }
+
+  if (asJson) {
+    process.stdout.write(`${JSON.stringify({ accounts: results, syncedHub }, null, 2)}\n`);
+  }
+  if (failed > 0) process.exit(1);
+}
+
 async function cmdAccounts(args) {
   const sub = args.shift();
   switch (sub) {
@@ -780,6 +928,9 @@ async function cmdAccounts(args) {
       break;
     case "login":
       await cmdAccountsLogin(args);
+      break;
+    case "auto-login":
+      await cmdAccountsAutoLogin(args);
       break;
     case "remove":
       await cmdAccountsRemove(args);
@@ -803,7 +954,7 @@ async function cmdAccounts(args) {
       await cmdAccountsExport(args);
       break;
     default:
-      process.stderr.write("Usage: musebridge accounts list|add|login|remove|check|usage|refresh|set|import|export\n");
+      process.stderr.write("Usage: musebridge accounts list|add|login|auto-login|remove|check|usage|refresh|set|import|export\n");
       process.exit(1);
   }
 }
