@@ -4,9 +4,11 @@ import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
+import { DEFAULT_ACTION_ID } from "../bridge/usage.mjs";
+
 const usageModule = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "bridge", "usage.mjs");
 
-const BUILTIN = "409b972cbb33d3e372f4ca9d3c8332677217064f62";
+const BUILTIN = DEFAULT_ACTION_ID;
 const STALE = "40aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NEW_ID = "40bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const COOKIES = [{ name: "c", value: "v", domain: ".muse.ai", path: "/" }];
@@ -120,4 +122,34 @@ test("401 and 403 still reject with auth_failed", async () => {
       (err) => err.code === "auth_failed",
     );
   }
+});
+
+test("discoverActionId follows lazy Turbopack modal chunks with dpl query param", async () => {
+  const ctx = await freshBridge();
+  const seenUrls = [];
+  const fetchImpl = async (url, init = {}) => {
+    url = String(url);
+    seenUrls.push(url);
+    const action = init.headers && init.headers["Next-Action"];
+    if (action) {
+      return action === NEW_ID ? new Response(RSC, { status: 200 }) : new Response("Conflict", { status: 409 });
+    }
+    if (url.includes("lazy_modal.js")) {
+      return new Response(
+        `(0,a.createServerReference)("${NEW_ID}",a.callServer,void 0,a.findSourceMapURL,"fetchSubscriptionAction")`,
+        { status: 200 },
+      );
+    }
+    if (url.includes("entry.js")) {
+      return new Response('s.v(t=>Promise.all(["static/chunks/lazy_modal.js"].map(t=>s.l(t))))', { status: 200 });
+    }
+    return new Response(
+      '<html data-dpl-id="dpl_test123"><script src="/_next/static/chunks/entry.js?dpl=dpl_test123"></script></html>',
+      { status: 200 },
+    );
+  };
+  const usage = await ctx.mod.fetchAccountUsage({ cookies: COOKIES, fetchImpl, cache: false });
+  assert.equal(usage.percentUsed, 29);
+  assert.ok(seenUrls.includes("https://muse.ai/_next/static/chunks/lazy_modal.js?dpl=dpl_test123"));
+  assert.equal(cachedId(ctx.cacheFile), NEW_ID);
 });

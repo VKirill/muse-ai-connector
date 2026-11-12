@@ -5,14 +5,17 @@ import { readJson, writeJsonAtomic } from "./json-file.mjs";
 import { bridgeHome } from "./paths.mjs";
 
 const MUSE_ORIGIN = "https://muse.ai";
-const USAGE_URL = `${MUSE_ORIGIN}/settings/usage`;
+const USAGE_URL = `${MUSE_ORIGIN}/`;
 const CHROME_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-const DEFAULT_ACTION_ID = "409b972cbb33d3e372f4ca9d3c8332677217064f62";
+export const DEFAULT_ACTION_ID = "40e0249eeae158685b6a8d0c3b203f53dd4f2c7d63";
+const ACTION_BODY = '[{"includeAgreement":true}]';
 const CACHE_TTL_MS = 5 * 60 * 1000;
+const CHUNK_BATCH_SIZE = 8;
 
 const usageCache = new Map();
 let rememberedActionId = null;
+let inflightDiscovery = null;
 
 function authError(status) {
   const err = new Error("Muse API unauthorized");
@@ -84,7 +87,7 @@ function postAction(fetchImpl, cookies, actionId) {
   return fetchImpl(USAGE_URL, {
     method: "POST",
     headers: usageHeaders(cookies, actionId),
-    body: "[]",
+    body: ACTION_BODY,
   });
 }
 
@@ -111,7 +114,54 @@ async function readPayload(res) {
   return parseActionResult(await res.text());
 }
 
-async function discoverActionId(fetchImpl, cookies) {
+function extractSubscriptionActionId(js) {
+  const match = /createServerReference\)\("([0-9a-fA-F]+)"[^)]*?"fetchSubscriptionAction"/.exec(js);
+  return match ? match[1] : null;
+}
+
+function extractLazyChunkUrls(js, dplSuffix) {
+  const out = [];
+  for (const m of js.matchAll(/["']((?:\/_next\/)?static\/chunks\/[0-9a-zA-Z._-]+\.js)["']/g)) {
+    const raw = m[1].startsWith("/_next/") ? m[1] : `/_next/${m[1]}`;
+    out.push(`${MUSE_ORIGIN}${raw}${dplSuffix}`);
+  }
+  return out;
+}
+
+async function scanChunkUrls(fetchImpl, urls, visited, lazyOut, dplSuffix) {
+  const queue = urls.filter((u) => {
+    if (visited.has(u)) return false;
+    visited.add(u);
+    return true;
+  });
+  for (let i = 0; i < queue.length; i += CHUNK_BATCH_SIZE) {
+    const batch = queue.slice(i, i + CHUNK_BATCH_SIZE);
+    const texts = await Promise.all(
+      batch.map(async (url) => {
+        try {
+          const res = await fetchImpl(url, {
+            method: "GET",
+            headers: { "User-Agent": CHROME_UA, Referer: USAGE_URL },
+          });
+          return res.ok ? await res.text() : "";
+        } catch {
+          return "";
+        }
+      }),
+    );
+    for (const js of texts) {
+      if (!js) continue;
+      const hit = extractSubscriptionActionId(js);
+      if (hit) return hit;
+      if (lazyOut) {
+        for (const lazyUrl of extractLazyChunkUrls(js, dplSuffix)) lazyOut.push(lazyUrl);
+      }
+    }
+  }
+  return null;
+}
+
+async function discoverActionIdUncached(fetchImpl, cookies) {
   const headers = {
     Accept: "text/html,application/xhtml+xml",
     "User-Agent": CHROME_UA,
@@ -123,19 +173,29 @@ async function discoverActionId(fetchImpl, cookies) {
   if (pageRes.status === 401 || pageRes.status === 403) throw authError(pageRes.status);
   if (!pageRes.ok) return null;
   const html = await pageRes.text();
-  const srcs = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js[^"']*)["']/g)].map((m) => m[1]);
-  for (const src of srcs) {
-    const url = src.startsWith("http") ? src : `${MUSE_ORIGIN}${src}`;
-    const res = await fetchImpl(url, {
-      method: "GET",
-      headers: { "User-Agent": CHROME_UA, Referer: USAGE_URL },
+  const srcs = [...html.matchAll(/<script[^>]+src=["']([^"']+\.js[^"']*)["']/g)].map((m) =>
+    m[1].startsWith("http") ? m[1] : `${MUSE_ORIGIN}${m[1]}`,
+  );
+  const dplFromHtml = /data-dpl-id=["']([^"']+)["']/.exec(html)?.[1];
+  const dplFromSrc = srcs.map((s) => /[?&]dpl=([^&#"']+)/.exec(s)?.[1]).find(Boolean);
+  const dplId = dplFromSrc ?? dplFromHtml ?? "";
+  const dplSuffix = dplId ? `?dpl=${encodeURIComponent(dplId)}` : "";
+
+  const visited = new Set();
+  const lazyUrls = [];
+  const directHit = await scanChunkUrls(fetchImpl, srcs, visited, lazyUrls, dplSuffix);
+  if (directHit) return directHit;
+  return scanChunkUrls(fetchImpl, lazyUrls, visited, null, dplSuffix);
+}
+
+async function discoverActionId(fetchImpl, cookies) {
+  if (fetchImpl !== globalThis.fetch) return discoverActionIdUncached(fetchImpl, cookies);
+  if (!inflightDiscovery) {
+    inflightDiscovery = discoverActionIdUncached(fetchImpl, cookies).finally(() => {
+      inflightDiscovery = null;
     });
-    if (!res.ok) continue;
-    const js = await res.text();
-    const match = /createServerReference\)\("([0-9a-fA-F]+)"[^)]*?"fetchSubscriptionAction"/.exec(js);
-    if (match) return match[1];
   }
-  return null;
+  return inflightDiscovery;
 }
 
 function mapUsage(payload) {
