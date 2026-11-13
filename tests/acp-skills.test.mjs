@@ -33,11 +33,40 @@ function seedSkills() {
   return dir;
 }
 
-test("skillDirs: MUSE_SKILL_DIRS wins; defaults cover cwd and home", () => {
+test("skillDirs: MUSE_SKILL_DIRS wins; defaults cover cwd, home, and bundled skills", () => {
   withSkillDirs("/tmp/a:/tmp/b", () => {
     assert.deepEqual(skillDirs("/work"), ["/tmp/a", "/tmp/b"]);
     assert.deepEqual(skillDirs("/work").length, 2);
   });
+  withSkillDirs("", () => {
+    const defaults = skillDirs("/work");
+    assert.ok(defaults.includes(path.join(here, "..", "skills")));
+  });
+});
+
+test("bundled muse-connector skill is declared in package.json and portable for clean BB installs", () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(here, "..", "package.json"), "utf8"));
+  assert.deepEqual(pkg.bb?.skills, ["skills"]);
+  const skillFile = path.join(here, "..", "skills", "muse-connector", "SKILL.md");
+  const refFile = path.join(here, "..", "skills", "muse-connector", "REFERENCE.md");
+  assert.ok(fs.existsSync(skillFile), "skills/muse-connector/SKILL.md must exist");
+  assert.ok(fs.existsSync(refFile), "skills/muse-connector/REFERENCE.md must exist");
+  const skillText = fs.readFileSync(skillFile, "utf8");
+  const refText = fs.readFileSync(refFile, "utf8");
+  assert.match(skillText, /^---\r?\nname:\s*muse-connector\r?\ndescription:/);
+  assert.match(skillText, /accounts auto-login --batch -/);
+  assert.ok(!skillText.includes("/Users/"), "SKILL.md must not contain local /Users/ paths");
+  assert.ok(!refText.includes("/Users/"), "REFERENCE.md must not contain local /Users/ paths");
+
+  const emptyDir = fs.mkdtempSync("/tmp/muse-bundled-only-");
+  try {
+    withSkillDirs(`${emptyDir}:${path.join(here, "..", "skills")}`, () => {
+      assert.match(listSkills("/anywhere", "muse-connector"), /muse-connector —/);
+      assert.match(readSkill("/anywhere", "muse-connector"), /accounts auto-login/);
+    });
+  } finally {
+    fs.rmSync(emptyDir, { recursive: true, force: true });
+  }
 });
 
 test("listSkills scans front matter and filters by query, capped at 30", () => {

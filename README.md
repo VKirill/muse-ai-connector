@@ -149,9 +149,13 @@ its final answer with a `[[done]]` line.
 - **MCP servers** the chat passes in `session/new` (stdio, or streamable HTTP) are started and
   exposed as `mcp__<server>__<tool>`; `tool_schema` returns any tool's input schema. A server
   that fails to start is skipped, the rest work.
-- **Skills:** `list_skills {query?}` / `read_skill {name}` scan `SKILL.md` front matter in
-  `MUSE_SKILL_DIRS` (colon-separated; default `<cwd>/.claude/skills`, `<cwd>/.agents/skills`,
-  `~/.claude/skills`, `~/.agents/skills`, `~/.bb/skills`).
+- **Skills:** Installing the plugin in BB automatically registers the bundled `muse-connector`
+  skill (`skills/muse-connector/SKILL.md`), so you can send `<email> <password> [mailbox: domain]`
+  in any BB chat and the agent knows how to sign in via IMAP OTP and sync cookies across connected
+  machines. Inside Muse Spark chats, `list_skills {query?}` / `read_skill {name}` scan `SKILL.md`
+  front matter in `MUSE_SKILL_DIRS` (colon-separated; default `<cwd>/.claude/skills`,
+  `<cwd>/.agents/skills`, `~/.claude/skills`, `~/.agents/skills`, `~/.bb/skills`, plus the bundled
+  `skills/` directory).
 - **BB rules** from the system block (project instructions, the owner's rules, the language
   section) are forwarded to Muse, capped at 16 KB; plugin manuals and skills catalogues are not.
 - A reply with neither a tool block nor `[[done]]` is nudged once; at most `MUSE_MAX_TOOL_ROUNDS`
@@ -433,9 +437,13 @@ musebridge accounts set <id> --max-parallel <n>
 - **MCP-серверы** чата из `session/new` (stdio или streamable HTTP) стартуют и доступны как
   `mcp__<server>__<tool>`; `tool_schema` возвращает схему входа любого инструмента. Сервер,
   который не стартовал, пропускается — остальные работают.
-- **Скиллы:** `list_skills {query?}` / `read_skill {name}` сканируют front matter SKILL.md в
-  `MUSE_SKILL_DIRS` (разделитель `:`; по умолчанию `<cwd>/.claude/skills`, `<cwd>/.agents/skills`,
-  `~/.claude/skills`, `~/.agents/skills`, `~/.bb/skills`).
+- **Скиллы:** при установке плагина в BB автоматически подключается встроенный скилл
+  `muse-connector` (`skills/muse-connector/SKILL.md`): достаточно скинуть в чат
+  `<email> <password> [mailbox: domain]`, и агент сам проведёт автовход по коду из IMAP и
+  раскидает куки по подключённым машинам. В чатах Muse Spark инструменты `list_skills {query?}` /
+  `read_skill {name}` сканируют front matter SKILL.md в `MUSE_SKILL_DIRS` (разделитель `:`; по
+  умолчанию `<cwd>/.claude/skills`, `<cwd>/.agents/skills`, `~/.claude/skills`,
+  `~/.agents/skills`, `~/.bb/skills` и встроенный каталог `skills/`).
 - **Правила BB** из системного блока (инструкции проекта, правила владельца, раздел про язык)
   пересылаются Muse с ограничением 16 КБ; инструкции плагинов и каталоги скиллов — нет.
 - Ответ без блока инструмента и без `[[done]]` получает одно напоминание; на промпт — не больше

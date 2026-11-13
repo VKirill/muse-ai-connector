@@ -1,9 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 const MAX_SKILLS = 30;
 const SKILL_TEXT_CAP = 20 * 1024;
+const BUNDLED_SKILLS_DIR = fileURLToPath(new URL("../skills", import.meta.url));
 
 export function skillDirs(cwd) {
   const env = process.env.MUSE_SKILL_DIRS;
@@ -20,6 +22,7 @@ export function skillDirs(cwd) {
     path.join(os.homedir(), ".claude", "skills"),
     path.join(os.homedir(), ".agents", "skills"),
     path.join(os.homedir(), ".bb", "skills"),
+    BUNDLED_SKILLS_DIR,
   ];
 }
 
