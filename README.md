@@ -16,6 +16,8 @@ Licence: Apache-2.0. Requires Node 22+, npm, and Google Chrome on at least one c
 
 Русская версия: [ниже](#по-русски).
 
+Documentation: [Overview](docs/overview.md) · [Architecture](docs/architecture.md) · [API Reference](docs/api.md) · [Data Model](docs/data-model.md) · [Gotchas](docs/gotchas.md) · [Agent Quick Reference](PROJECT.md)
+
 ## What you get
 
 - **Muse in BB's provider picker** — choose Muse in any chat the same way you pick other providers.
@@ -116,7 +118,7 @@ logged; during account sync they travel host → hub memory → host and are nev
 
 ### Parallel slots
 
-Each account serves `maxParallel` chats at once — default 1, allowed 1–50:
+Each account serves `maxParallel` chats at once — default 10, allowed 1–50:
 
 ```sh
 musebridge accounts set <id> --max-parallel <n>
@@ -158,7 +160,7 @@ its final answer with a `[[done]]` line.
   `skills/` directory).
 - **BB rules** from the system block (project instructions, the owner's rules, the language
   section) are forwarded to Muse, capped at 16 KB; plugin manuals and skills catalogues are not.
-- A reply with neither a tool block nor `[[done]]` is nudged once; at most `MUSE_MAX_TOOL_ROUNDS`
+- A reply with neither a tool block nor `[[done]]` is nudged up to three times before stopping; at most `MUSE_MAX_TOOL_ROUNDS`
   (default 60) rounds run per prompt, then the turn ends with a note. `session/cancel` stops the
   loop between rounds; when a send was in flight, the rest of the interrupted reply is pulled
   from history on the next prompt (`MUSE_PENDING_WAIT_MS`, default 30 s).
@@ -170,8 +172,8 @@ its final answer with a `[[done]]` line.
   prefixes only the first message (or a later one that starts with a form factor `16:9 кот` /
   `[4:5] cat`) as `Create image format: <W:H>. …` or `Create image. …`. Other follow-ups go to the
   same Muse chat as typed. No tools intro. The agent saves new pictures under
-  `<workspace>/muse-images/` and sends each one back as an image content block plus the relative
-  path. Muse has no reasoning knob: BB reasoning levels are accepted so the composer does not fail,
+  `<workspace>/muse-images/` and sends each one back as a Markdown image link to the saved file.
+  Muse has no reasoning knob: BB reasoning levels are accepted so the composer does not fail,
   and the agent ignores them.
 
 ## CLI reference
@@ -191,10 +193,11 @@ musebridge approve [--account <id>] --chat <id>
                                             # cards about money are left to you)
 musebridge accounts list [--json]           # list Muse accounts (busy/max slots, locked)
 musebridge accounts add <label>             # register an account and open a sign-in window
-musebridge accounts auto-login [<id>] [--force] [--headed] [--batch <file|->] [--max-parallel <n>] [--json]
+musebridge accounts auto-login [<id>] [--force] [--headed] [--email <addr>] [--imap-host <host>] [--password-stdin] [--batch <file|->] [--max-parallel <n>] [--json]
                                             # sign in automatically via IMAP OTP (reads BB Env Catalog by default)
 musebridge accounts remove <id> [--purge]   # remove an account from the registry
 musebridge accounts check [<id>]            # refresh signed-in status
+musebridge accounts usage [<id>] [--json]   # show plan usage for every account or one account
 musebridge accounts refresh <id>            # export cookies from the signed-in Chrome profile
 musebridge accounts import [<id>] [--label <label>]
                                             # import a cookies JSON array or an export object from stdin
@@ -217,7 +220,7 @@ Environment variables the code reads:
 | `MUSE_TRANSPORT` | `api` | `browser` forces the Chrome transport |
 | `MUSE_REPLY_TIMEOUT_SEC` | `180` | reply wait per send (plugin setting **Reply timeout**) |
 | `MUSE_MAX_TOOL_ROUNDS` | `60` | max tool round trips per prompt |
-| `MUSE_MAX_PARALLEL` | `1` | default `maxParallel` for accounts without an explicit value |
+| `MUSE_MAX_PARALLEL` | `10` | default `maxParallel` for accounts without an explicit value |
 | `MUSE_SKILL_DIRS` | see above | colon-separated extra skill roots |
 | `MUSE_HEADLESS` | `1` | `0`/`false` shows the Chrome window (plugin setting **Headless Chrome**) |
 | `MUSE_PENDING_WAIT_MS` | `30000` | how long to pull the tail of an interrupted reply |
@@ -246,8 +249,9 @@ account all finished.
   for chat runs, add-account always opens a visible window.
 - The runtime self-install needs Node 22+ and npm reachable from the BB host daemon; Windows is
   not supported.
-- User-attached image and audio prompts are not supported (`promptCapabilities`: text only).
-  Generated pictures come back from the **Muse Image** model and `musebridge image`.
+- User-attached audio prompts are not supported (`promptCapabilities.audio`: `false`); image and
+  file attachments up to 10 MB are supported (`promptCapabilities.image`: `true`). Generated
+  pictures come back from the **Muse Image** model and `musebridge image`.
 
 ## Troubleshooting
 
@@ -403,7 +407,7 @@ accepts `dir:<path>` as a source for local installs.
 
 #### Параллельные слоты
 
-Каждый аккаунт обслуживает `maxParallel` чатов одновременно — по умолчанию 1, допустимо 1–50:
+Каждый аккаунт обслуживает `maxParallel` чатов одновременно — по умолчанию 10, допустимо 1–50:
 
 ```sh
 musebridge accounts set <id> --max-parallel <n>
@@ -446,7 +450,7 @@ musebridge accounts set <id> --max-parallel <n>
   `~/.agents/skills`, `~/.bb/skills` и встроенный каталог `skills/`).
 - **Правила BB** из системного блока (инструкции проекта, правила владельца, раздел про язык)
   пересылаются Muse с ограничением 16 КБ; инструкции плагинов и каталоги скиллов — нет.
-- Ответ без блока инструмента и без `[[done]]` получает одно напоминание; на промпт — не больше
+- Ответ без блока инструмента и без `[[done]]` получает до трёх напоминаний перед остановкой; на промпт — не больше
   `MUSE_MAX_TOOL_ROUNDS` раундов (по умолчанию 60), затем ход завершается с пояснением.
   `session/cancel` останавливает цикл между раундами; если отправка была в полёте, хвост
   прерванного ответа дочитывается из истории на следующем промпте (`MUSE_PENDING_WAIT_MS`,
@@ -459,9 +463,9 @@ musebridge accounts set <id> --max-parallel <n>
   (`muse-image`) ставит префикс только на первое сообщение (или на следующее, которое начинается
   с форм-фактора `16:9 кот` / `[4:5] cat`): `Create image format: <W:H>. …` или `Create image. …`.
   Остальные реплики уходят в тот же чат Muse как есть. Без интро инструментов. Агент сохраняет
-  новые картинки в `<workspace>/muse-images/` и отдаёт каждую блоком изображения плюс относительный
-  путь. У Muse нет переключателя рассуждения: уровни BB принимаются, чтобы композитор не падал,
-  и агент их игнорирует.
+  новые картинки в `<workspace>/muse-images/` и отдаёт каждую в виде Markdown-ссылки на
+  изображение. У Muse нет переключателя рассуждения: уровни BB принимаются, чтобы композитор не
+  падал, и агент их игнорирует.
 
 ### Справка по CLI
 
@@ -480,10 +484,11 @@ musebridge approve [--account <id>] --chat <id>
                                             # карточки про деньги остаются вам)
 musebridge accounts list [--json]           # список аккаунтов (слоты busy/max, locked)
 musebridge accounts add <label>             # зарегистрировать аккаунт и открыть окно входа
-musebridge accounts auto-login [<id>] [--force] [--headed] [--batch <file|->] [--max-parallel <n>] [--json]
+musebridge accounts auto-login [<id>] [--force] [--headed] [--email <addr>] [--imap-host <host>] [--password-stdin] [--batch <file|->] [--max-parallel <n>] [--json]
                                             # автовход по коду из IMAP (по умолчанию читает BB Env Catalog)
 musebridge accounts remove <id> [--purge]   # убрать аккаунт из реестра
 musebridge accounts check [<id>]            # обновить статус входа
+musebridge accounts usage [<id>] [--json]   # показать лимиты тарифа по аккаунтам
 musebridge accounts refresh <id>            # выгрузить куки из вошедшего профиля Chrome
 musebridge accounts import [<id>] [--label <label>]
                                             # импорт массива кук или объекта export со stdin
@@ -506,7 +511,7 @@ muse-acp                                    # ACP-агент на stdio (зап�
 | `MUSE_TRANSPORT` | `api` | `browser` принудительно включает транспорт Chrome |
 | `MUSE_REPLY_TIMEOUT_SEC` | `180` | ожидание ответа на отправку (настройка **Reply timeout**) |
 | `MUSE_MAX_TOOL_ROUNDS` | `60` | максимум раундов инструментов на промпт |
-| `MUSE_MAX_PARALLEL` | `1` | `maxParallel` по умолчанию для аккаунтов без явного значения |
+| `MUSE_MAX_PARALLEL` | `10` | `maxParallel` по умолчанию для аккаунтов без явного значения |
 | `MUSE_SKILL_DIRS` | см. выше | дополнительные корни скиллов через `:` |
 | `MUSE_HEADLESS` | `1` | `0`/`false` показывает окно Chrome (настройка **Headless Chrome**) |
 | `MUSE_PENDING_WAIT_MS` | `30000` | сколько дочитывать хвост прерванного ответа |
@@ -535,8 +540,9 @@ muse-acp                                    # ACP-агент на stdio (зап�
   добавление аккаунта всегда открывает видимое окно.
 - Самоустановке рантайма нужны Node 22+ и npm, доступные хост-демону BB; Windows не
   поддерживается.
-- Картинки и аудио, приложенные к промпту, не поддерживаются (`promptCapabilities`: только
-  текст). Сгенерированные картинки приходят из модели **Muse Image** и команды `musebridge image`.
+- Аудиовложения в промптах не поддерживаются (`promptCapabilities.audio`: `false`); картинки и
+  файлы до 10 МБ поддерживаются (`promptCapabilities.image`: `true`). Сгенерированные картинки
+  приходят из модели **Muse Image** и команды `musebridge image`.
 
 ### Диагностика
 
