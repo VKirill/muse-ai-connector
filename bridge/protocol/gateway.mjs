@@ -330,7 +330,15 @@ export function defaultSocketFactory(url, Socket = WebSocket) {
 function dialFailed(status, reason) {
   const err = new Error(`gateway dial failed: ${status ?? ""} ${reason ?? ""}`.trim());
   err.code = "gateway_dial_failed";
+  if (typeof status === "number") err.status = status;
   return err;
+}
+
+const DIAL_RETRY_DELAYS_MS = [1000, 2500, 5000];
+
+function isTransientDial(err) {
+  if (err?.code !== "gateway_dial_failed") return false;
+  return err.status == null || err.status === 429 || err.status >= 500;
 }
 
 function waitEvent(target, name) {
@@ -589,6 +597,7 @@ async function openSocket(url, socketFactory) {
     const [sendCipher, recvCipher] = await handshake(ws);
     return openTunnel(ws, sendCipher, recvCipher);
   } catch (err) {
+    ws.addEventListener("error", () => {});
     try {
       ws.close();
     } catch {
@@ -605,6 +614,18 @@ export async function connectGateway({ cookies, fetchImpl, socketFactory } = {})
   let tunnel = null;
 
   async function connect() {
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await connectOnce();
+      } catch (err) {
+        if (attempt >= DIAL_RETRY_DELAYS_MS.length || !isTransientDial(err)) throw err;
+        process.stderr.write(`${err.message}; retry ${attempt + 1}/${DIAL_RETRY_DELAYS_MS.length}\n`);
+        await new Promise((resolve) => setTimeout(resolve, DIAL_RETRY_DELAYS_MS[attempt]));
+      }
+    }
+  }
+
+  async function connectOnce() {
     const ctx = await bootstrapHttps({ cookies, fetchImpl });
     const url = buildGatewayUrl({
       base: ctx.gatewayUrl,
