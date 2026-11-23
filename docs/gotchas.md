@@ -2,7 +2,7 @@
 title: Gotchas
 type: gotchas
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: high
 tags: [gotchas, reliability, noise, chrome, concurrency]
@@ -34,11 +34,11 @@ Sharp edges, protocol traps, and non-obvious runtime constraints verified in the
 
 ### Noise server identity is not verified
 
-**Problem:** During the `Noise_XX_25519_AESGCM_SHA256` handshake in `handshake(ws)`, the client completes key exchange with whatever static public key the WebSocket endpoint presents and logs `Noise server identity not verified` to `stderr` (`bridge/protocol/gateway.mjs:375-384`).
+**Problem:** During the `Noise_XX_25519_AESGCM_SHA256` handshake in `handshake(ws)`, the client completes key exchange with whatever static public key the WebSocket endpoint presents and logs `Noise server identity not verified` to `stderr` (`bridge/protocol/gateway.mjs:383-392`).
 **Risk:** Traffic is encrypted against passive observers, but the client does not pin or authenticate the remote Noise static key against a trusted server key.
 **Workaround:** Keep account cookies private (`0600`) and treat the warning as an expected transport limitation until static-key pinning is implemented.
 
-`bridge/protocol/gateway.mjs:375-384`
+`bridge/protocol/gateway.mjs:383-392`
 
 ### Both Muse plugins claim provider ID `muse`
 
@@ -52,11 +52,11 @@ Sharp edges, protocol traps, and non-obvious runtime constraints verified in the
 
 ### Node's built-in WebSocket fails with HTTP/2 ALPN close 1006
 
-**Problem:** `wss://hatch.metaaivm.com/v1/noise` closes with code `1006` if dialed with Node's undici `WebSocket` because undici negotiates HTTP/2 via ALPN. `gateway.mjs` explicitly imports the `ws` package (`defaultSocketFactory`) to force an HTTP/1.1 WebSocket upgrade with `Origin` and Chrome `User-Agent` headers (`bridge/protocol/gateway.mjs:3,317-328`).
+**Problem:** `wss://hatch.metaaivm.com/v1/noise` closes with code `1006` if dialed with Node's undici `WebSocket` because undici negotiates HTTP/2 via ALPN. `gateway.mjs` explicitly imports the `ws` package (`defaultSocketFactory`) to force an HTTP/1.1 WebSocket upgrade with `Origin` and Chrome `User-Agent` headers (`bridge/protocol/gateway.mjs:3,325-336`).
 **Risk:** Replacing `ws` with global `WebSocket` breaks the direct API transport on every call.
 **Workaround:** Always keep `ws` as a runtime dependency and pass `gatewaySocketOptions()` when opening the gateway socket.
 
-`bridge/protocol/gateway.mjs:3,317-328`
+`bridge/protocol/gateway.mjs:3,325-336`
 
 ### Responses and streams omit `content-encoding: zstd`
 

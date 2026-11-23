@@ -2,7 +2,7 @@
 title: Architectural Decisions
 type: decisions
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: high
 tags: [decisions, adr, architecture, protocol, security]
@@ -80,13 +80,13 @@ Recorded architectural decisions extracted from the codebase and commit history,
 
 **Context:** Node's built-in undici `WebSocket` negotiates HTTP/2 over ALPN and receives close code `1006` from `DEFAULT_WS` (`bridge/protocol/gateway.mjs:23`), while `decodeBytes` and `decodeBody` sniff `ZSTD_MAGIC` because Muse VM responses omit `content-encoding: zstd` (`bridge/protocol/gateway.mjs:11-20`, `bridge/protocol/ndjson.mjs:3-20`).
 
-**Decision:** Add `ws` as a runtime dependency to force HTTP/1.1 WebSocket upgrades with `Origin` and Chrome `User-Agent` headers, parse VM context from Next.js flight HTML by object keys (`"authToken"`, `"cvmMigrationInventorySnapshot"`), and detect zstd compression by inspecting `0xfd2fb528` magic bytes (`bridge/protocol/gateway.mjs:186-229,317-328`, `bridge/protocol/ndjson.mjs:3-63`).
+**Decision:** Add `ws` as a runtime dependency to force HTTP/1.1 WebSocket upgrades with `Origin` and Chrome `User-Agent` headers, parse VM context from Next.js flight HTML by object keys (`"authToken"`, `"cvmMigrationInventorySnapshot"`), and detect zstd compression by inspecting `0xfd2fb528` magic bytes (`bridge/protocol/gateway.mjs:186-228,325-336`, `bridge/protocol/ndjson.mjs:3-63`).
 
 **Status:** active
 
 **Consequences:** Normal chat turns, image downloads, and chat history run directly over Noise XX without launching Chrome per turn, leaving Chrome only for sign-in and `401`/`403` fallback (`bin/muse-acp.mjs:287-309`, `bridge/protocol/api.mjs:375-401`).
 
-**Sources:** `bridge/protocol/gateway.mjs:11-20,186-229,317-328`, `bridge/protocol/ndjson.mjs:3-63`, `package.json:38`.
+**Sources:** `bridge/protocol/gateway.mjs:11-20,186-228,325-336`, `bridge/protocol/ndjson.mjs:3-63`, `package.json:38`.
 
 ## 004. Embed `PLUGIN_VERSION` as a compile-time literal for standalone host bundles (active)
 

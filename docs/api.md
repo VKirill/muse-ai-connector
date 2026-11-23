@@ -2,7 +2,7 @@
 title: API Reference
 type: component
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [api, rpc, acp, muse-gateway, endpoints]
@@ -25,7 +25,7 @@ All programmatic interfaces across `bb-plugin-muse`: BB Hub RPC (`rpcContract`),
 
 ## Purpose
 
-The plugin exposes two typed Zod RPC contracts between BB UI, Hub, and Host daemons (`server.ts:93-120`, `host.ts:84-115`), implements ACP JSON-RPC 2.0 on stdio for BB chat execution (`bin/muse-acp.mjs:617-709`), and consumes `muse.ai` HTTPS and Noise-tunnel endpoints (`bridge/protocol/gateway.mjs:273-306`, `bridge/protocol/api.mjs:150-284`, `bridge/usage.mjs:86-92`).
+The plugin exposes two typed Zod RPC contracts between BB UI, Hub, and Host daemons (`server.ts:93-120`, `host.ts:84-115`), implements ACP JSON-RPC 2.0 on stdio for BB chat execution (`bin/muse-acp.mjs:617-709`), and consumes `muse.ai` HTTPS and Noise-tunnel endpoints (`bridge/protocol/gateway.mjs:273-323`, `bridge/protocol/api.mjs:150-284`, `bridge/usage.mjs:86-92`).
 
 ## How it works
 
@@ -41,13 +41,13 @@ The plugin exposes two typed Zod RPC contracts between BB UI, Hub, and Host daem
 | Hub RPC (`rpcContract`) | BB plugin RPC; BB authenticated session | `HOST_LOGIN_TIMEOUT_MS` 12 min, `HOST_INSTALL_TIMEOUT_MS` 10 min, `HOST_CHECK_TIMEOUT_MS` 3 min, `USAGE_TIMEOUT_MS` 45 s (`server.ts:127-132`) | Returns `{ error }` in `HostEntry` or `usage_timeout` / `usage_unavailable` (`server.ts:192-201,362-364`) |
 | Host RPC (`hostContract`) | BB host-daemon RPC; BB hub-host channel | `ADD_TIMEOUT_MS` 11 min, `CHECK_TIMEOUT_MS` 120 s, `LIST_TIMEOUT_MS` 15 s (`host.ts:15-17`) | Returns `problems[]` in `HostStatus` or throws stderr tail (`host.ts:245-249,285,315`) |
 | ACP (`muse-acp`) | Line-delimited JSON-RPC 2.0 on stdio | `CLIENT_REQUEST_TIMEOUT_MS` 60 s (`bin/muse-acp.mjs:58`) | Replies `-32601` / `-32602` / `-32603` or streams `RetriableError` / `NonRetriableError` (`bin/muse-acp.mjs:609-612,707`) |
-| Muse HTTPS + Noise Tunnel | Session `Cookie` header + Noise XX (`vm_id`, `auth_token`) | HTTP `401`/`403` triggers `auth_failed`; `REPLY_TIMEOUT_MS` default 180 s (`bridge/protocol/gateway.mjs:28-33`, `bin/muse-acp.mjs:21`) | `connectGateway` reconnects once per call; `send()` resubscribes with exponential backoff (`bridge/protocol/api.mjs:290-304`, `bridge/protocol/gateway.mjs:630-638`) |
+| Muse HTTPS + Noise Tunnel | Session `Cookie` header + Noise XX (`vm_id`, `auth_token`) | HTTP `401`/`403` triggers `auth_failed`; `REPLY_TIMEOUT_MS` default 180 s (`bridge/protocol/gateway.mjs:28-33`, `bin/muse-acp.mjs:21`) | `connectGateway` reconnects once per call; `send()` resubscribes with exponential backoff (`bridge/protocol/api.mjs:290-304`, `bridge/protocol/gateway.mjs:638-646`) |
 
 ## Business rules
 
 - **Hub timeout headroom:** Every Hub-to-Host RPC timeout (`HOST_LOGIN_TIMEOUT_MS`, `HOST_CHECK_TIMEOUT_MS`, `HOST_INSTALL_TIMEOUT_MS`, `HOST_USAGE_TIMEOUT_MS`) is strictly larger than the corresponding subprocess timeout in `host.ts` so BB's 30 s default host-call deadline does not interrupt login or runtime installs (`server.ts:127-132`, `host.ts:15-17`).
 - **Cookie handling across RPC:** `exportAccount` returns cookies only on `hostContract` for in-memory transit inside `syncAcrossHosts`; `rpcContract` never exposes cookie arrays to the browser UI (`server.ts:100-120`, `bridge/hub-sync.mjs:4,11-20`).
-- **Gateway origin enforcement:** Every `/api/hatch/*` HTTPS call sends `Origin: https://muse.ai`, `Referer: https://muse.ai/`, and `x-app-id: hatch-web`, and WebSocket upgrade dials `wss://hatch.metaaivm.com/v1/noise` with `Origin: https://muse.ai` (`bridge/protocol/gateway.mjs:23-24,236-251,317-322`).
+- **Gateway origin enforcement:** Every `/api/hatch/*` HTTPS call sends `Origin: https://muse.ai`, `Referer: https://muse.ai/`, and `x-app-id: hatch-web`, and WebSocket upgrade dials `wss://hatch.metaaivm.com/v1/noise` with `Origin: https://muse.ai` (`bridge/protocol/gateway.mjs:23-24,235-250,325-330`).
 
 ## Public API
 
@@ -103,10 +103,10 @@ Called by `bridge/protocol/gateway.mjs`, `bridge/protocol/api.mjs`, and `bridge/
 
 | Method | Path | Caller | Purpose | Auth |
 |---|---|---|---|---|
-| `GET` | `https://muse.ai/` (`bridge/protocol/gateway.mjs:281`) | `bootstrapHttps` | Fetch Next.js flight HTML containing `vmId`, `authToken`, `notaryToken` | Account `Cookie` header |
-| `POST` | `https://muse.ai/api/hatch/token` (`bridge/protocol/gateway.mjs:265-290`) | `bootstrapHttps` | Fallback VM token assignment when `authToken` is missing | Account cookie header |
-| `POST` | `https://muse.ai/api/hatch/vm/wake` (`bridge/protocol/gateway.mjs:265-300`) | `bootstrapHttps` | Wake assigned VM before dialing Noise WebSocket | Account cookie header |
-| `POST` | `https://muse.ai/api/hatch/stateful-sharing` (`bridge/protocol/gateway.mjs:265-305`) | `bootstrapHttps` | Enable stateful sharing on the Muse session | Account cookie header |
+| `GET` | `https://muse.ai/` (`bridge/protocol/gateway.mjs:281`) | `bootstrapHttps` | Fetch Next.js flight HTML containing `vmId`, `vmName`, `gatewayUrl`, optional `authToken`, `notaryToken`, and `backendAuthStatus` | Account `Cookie` header |
+| `POST` | `https://muse.ai/api/hatch/token` (`bridge/protocol/gateway.mjs:263-300`) | `bootstrapHttps` | Request or refresh VM token (`{ vmAddress, vmName, force_refresh: true }` or `{}`) when `authToken` is missing or `backendAuthStatus` is not `"authenticated"` | Account cookie header |
+| `POST` | `https://muse.ai/api/hatch/vm/wake` (`bridge/protocol/gateway.mjs:263-312`) | `bootstrapHttps` | Wake assigned VM before dialing Noise WebSocket | Account cookie header |
+| `POST` | `https://muse.ai/api/hatch/stateful-sharing` (`bridge/protocol/gateway.mjs:263-313`) | `bootstrapHttps` | Enable stateful sharing on the Muse session | Account cookie header |
 | `POST` | `https://muse.ai/` (`bridge/usage.mjs:86-92`) | `fetchAccountUsage` | Next.js server action (`Next-Action` header, body `[{"includeAgreement":true}]`) for plan quota | Account `Cookie` header |
 | `WSS` | `wss://hatch.metaaivm.com/v1/noise` (`bridge/protocol/gateway.mjs:23,51-59`) | `connectGateway` | Upgrade WebSocket with `vm_id`, `auth_token`, `app_id=hatch-web`, `request_id`, `notary_token` | `auth_token` + Noise XX |
 | Tunnel `POST` | `/api/nodes/register` (`bridge/protocol/api.mjs:150-159`) | `createMuseClient` | Register local BB `node_id` on the VM | Noise tunnel |
@@ -120,7 +120,7 @@ Called by `bridge/protocol/gateway.mjs`, `bridge/protocol/api.mjs`, and `bridge/
 ## Gotchas
 
 - `bb plugin rpc call muse <method>` has no `--input` flag; callers must pass `--input-file <path> --json` (`bridge/auto-login.mjs:609`).
-- `bootstrapHttps` always returns `DEFAULT_WS` (`wss://hatch.metaaivm.com/v1/noise`) even when the HTML flight context reports a per-VM hostname, keeping the per-VM URL only in `vmGatewayUrl` (`bridge/protocol/gateway.mjs:307-314`).
+- `bootstrapHttps` always returns `DEFAULT_WS` (`wss://hatch.metaaivm.com/v1/noise`) even when the HTML flight context reports a per-VM hostname, keeping the per-VM URL only in `vmGatewayUrl` (`bridge/protocol/gateway.mjs:315-322`).
 
 <!-- lane-pilot:backlinks -->
 ## Referenced by

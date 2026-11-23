@@ -1,6 +1,6 @@
 ---
 title: bb-plugin-muse
-updated: 2026-11-18
+updated: 2026-11-23
 sources:
   - package.json
   - docs/overview.md
@@ -17,7 +17,7 @@ sources:
 
 ## Identity
 
-- **Package:** `bb-plugin-muse` v0.3.22 (`Apache-2.0`), BB provider ID `muse`, Node.js `>=22` ESM + TypeScript `^5.7.0` (`noEmit`) — see [Overview](docs/overview.md).
+- **Package:** `bb-plugin-muse` v0.3.23 (`Apache-2.0`), BB provider ID `muse`, Node.js `>=22` ESM + TypeScript `^5.7.0` (`noEmit`) — see [Overview](docs/overview.md).
 - **Dependencies:** `@get-bb/plugin-sdk@0.6.49`, `playwright-core@^1.56.1`, `ws@^8.22.1`, `zod@^4.6.5` — see [Overview](docs/overview.md).
 - **Capabilities:** Bridges BB chats (`muse-spark`, `muse-image`), local workspace tools, MCP servers, skills, multi-account slot pools, IMAP OTP auto-login, cross-host cookie sync, and quota tracking — see [Architecture](docs/architecture.md).
 

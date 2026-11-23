@@ -2,7 +2,7 @@
 title: Settings Panel and i18n
 type: component
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: medium
 tags: [ui, react, i18n, host, runtime-install, pokecut]
@@ -62,7 +62,7 @@ Provides the BB plugin settings summary, three-tab management panel (`Accounts`,
 | `formatUsageReset`, `formatExtraTokens` | `usage-format.ts:18-40` | Locale-aware reset date and extra-token percentage formatters |
 | `devOverride`, `runtimeStatus`, `installRuntime` | `bridge/runtime-install.mjs:28-54,177-222` | Runtime status inspection, `.dev` override lookup, and tarball/dir installation |
 | `default` (`experimental_defineHostEntry`), `experimental_providerBridge` | `host.ts:12,251-339` | Host daemon RPC handlers and ACP provider bridge re-export |
-| `PLUGIN_VERSION` | `version.ts:3` | Compile-time plugin version literal (`"0.3.22"`) |
+| `PLUGIN_VERSION` | `version.ts:3` | Compile-time plugin version literal (`"0.3.23"`) |
 
 ## Gotchas
 

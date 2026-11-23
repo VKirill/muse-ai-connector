@@ -2,7 +2,7 @@
 title: Muse AI Connector — Overview
 type: overview
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: high
 tags: [overview, bb-plugin, muse, acp, nodejs]
@@ -45,7 +45,7 @@ To remove manual setup on headless machines, the BB host daemon self-installs a 
 - **Runtime & language:** Node.js `>=22` plain ESM (`.mjs`) for CLI, agent, and bridge modules, plus TypeScript `^5.7.0` (`noEmit`) and React 19 JSX for BB plugin entry points (`package.json:7,18,44`, `tsconfig.json:1-14`).
 - **BB plugin SDK:** `@get-bb/plugin-sdk` `0.6.49` is declared under `dependencies` (`package.json:35-36`). Entry points import `defineRpcContract` (`server.ts:1-2`), `experimental_defineHostEntry` and `experimental_providerBridge` (`host.ts:5-6,12`), and `definePluginApp` (`app.tsx:2`).
 - **Validation:** `zod` `^4.6.5` for hub/host RPC contracts and plugin setting bounds (`package.json:39`, `server.ts:9-120`, `server.ts:227`, `host.ts:25-115`).
-- **Direct API transport:** `ws` `^8.22.1` over HTTP/1.1 with custom `Noise_XX_25519_AESGCM_SHA256` (`node:crypto`), custom protobuf framing, and `node:zlib` zstd decompression (`package.json:38`, `bridge/protocol/gateway.mjs:3,317-328`, `bridge/protocol/noise.mjs:1-12`, `bridge/protocol/envelope.mjs:39-223`, `bridge/protocol/ndjson.mjs:1-21`).
+- **Direct API transport:** `ws` `^8.22.1` over HTTP/1.1 with custom `Noise_XX_25519_AESGCM_SHA256` (`node:crypto`), custom protobuf framing, and `node:zlib` zstd decompression (`package.json:38`, `bridge/protocol/gateway.mjs:3,325-336`, `bridge/protocol/noise.mjs:1-12`, `bridge/protocol/envelope.mjs:39-223`, `bridge/protocol/ndjson.mjs:1-21`).
 - **Browser automation & login:** `playwright-core` `^1.56.1` driving persistent Google Chrome (`channel: "chrome"`) profiles (`package.json:37`, `bridge/session.mjs:2,24-31`, `bridge/auto-login.mjs:7`).
 - **Testing:** Built-in `node --test` runner across `tests/*.test.mjs` and `tsc --noEmit` (`package.json:14-15`).
 
