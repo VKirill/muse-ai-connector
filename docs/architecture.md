@@ -2,7 +2,7 @@
 title: Architecture
 type: architecture
 created: 2026-11-18
-updated: 2026-11-18
+updated: 2026-11-23
 status: active
 confidence: high
 tags: [architecture, c4, acp, noise, rpc, bb-plugin]
@@ -146,7 +146,7 @@ Sources: `server.ts:399-443`, `host.ts:265-311`, `bridge/hub-sync.mjs:11-36`, `b
 - **Workspace confinement:** Every local tool resolves paths through `resolveSessionPath(cwd, p)` and throws `tool_error` if the resolved path escapes `cwd` (`bridge/acp-tools.mjs:311-317`).
 - **Atomic locked state writes:** Mutations to `accounts.json`, `sessions.json`, and `sync.json` use `updateJson` (`<file>.lock` via `linkSync`, temp file + `renameSync`), while `readJson` retries transient parse failures instead of overwriting with `fallback` (`bridge/json-file.mjs:35-176`).
 - **In-memory cookie transit:** Cookies are saved with mode `0600` inside `0700` account directories on hosts (`bridge/cookies.mjs:16-34`), passed via `stdin` over SSH (`bridge/sync.mjs:72-116`), and held in hub memory only during `syncAcrossHosts` (`server.ts:387-414`, `bridge/hub-sync.mjs:1-36`).
-- **HTTP/1.1 WebSocket dial:** `gateway.mjs` uses the `ws` package rather than Node's `fetch`/undici `WebSocket` so ALPN does not negotiate HTTP/2 (`bridge/protocol/gateway.mjs:3,317-328`).
+- **HTTP/1.1 WebSocket dial:** `gateway.mjs` uses the `ws` package rather than Node's `fetch`/undici `WebSocket` so ALPN does not negotiate HTTP/2 (`bridge/protocol/gateway.mjs:3,325-336`).
 - **Approval safety:** Non-monetary Muse approval cards are clicked with `Always allow`, while cards matching `MONEY_RE` return `"ask"` and are left for the owner; `Deny` is never clicked (`bridge/permissions.mjs:8-20,100-140`).
 
 ## Cross-cutting concerns
