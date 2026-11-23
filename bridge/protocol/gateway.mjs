@@ -191,7 +191,7 @@ function contextFromFlightText(text) {
   ];
   const withAuth = candidates.filter((obj) => pick(obj, "authToken", "auth_token"));
   const withBoth = withAuth.filter((obj) => pick(obj, "gatewayUrl", "gateway_url"));
-  return withBoth[0] ?? withAuth[0] ?? null;
+  return withBoth[0] ?? withAuth[0] ?? candidates.find((obj) => pick(obj, "gatewayUrl", "gateway_url")) ?? null;
 }
 
 function pickVm(ctx) {
@@ -204,7 +204,7 @@ function pickVm(ctx) {
 
 /**
  * @param {string} html
- * @returns {{ vmId: string, vmName?: string, gatewayUrl: string, authToken: string, notaryToken?: string, backendAuthStatus?: string } | null}
+ * @returns {{ vmId: string, vmName?: string, gatewayUrl: string, authToken?: string, notaryToken?: string, backendAuthStatus?: string } | null}
  */
 export function parseBootstrapFromHtml(html) {
   if (!html) return null;
@@ -213,7 +213,6 @@ export function parseBootstrapFromHtml(html) {
   const ctx = contextFromFlightText(text);
   if (!ctx || typeof ctx !== "object") return null;
   const authToken = pick(ctx, "authToken", "auth_token");
-  if (!authToken) return null;
   const vm = pickVm(ctx);
   const vmId = vm?.vmId ?? pick(ctx, "vmId", "vm_id");
   const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? vm?.gatewayUrl;
@@ -250,14 +249,15 @@ function apiHeaders(cookies) {
   return headers;
 }
 
-function assignmentFromToken(payload) {
+function assignmentFromToken(payload, pageCtx) {
   const ctx = payload?.gatewayContext ?? payload?.context ?? payload;
-  const vmId = pick(ctx, "vmId", "vm_id") ?? pick(ctx?.vmAssignment, "vmId", "vm_id");
-  const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? DEFAULT_WS;
-  const authToken = pick(ctx, "authToken", "auth_token");
-  const notaryToken = pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken");
+  const vmId = pick(ctx, "vmId", "vm_id") ?? pick(ctx?.vmAssignment, "vmId", "vm_id") ?? pageCtx?.vmId;
+  const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? pageCtx?.gatewayUrl ?? DEFAULT_WS;
+  const authToken = pick(ctx, "token", "authToken", "auth_token");
+  const notaryToken = pick(ctx, "notary_token", "noiseNotaryToken", "notaryToken");
+  const vmName = pick(ctx, "vmName", "vm_name") ?? pageCtx?.vmName;
   if (!vmId || !authToken) return null;
-  return { vmId, gatewayUrl, authToken, notaryToken, vmName: pick(ctx, "vmName", "vm_name") };
+  return { vmId, gatewayUrl, authToken, notaryToken, vmName };
 }
 
 async function postApi(fetchImpl, path, cookies, body) {
@@ -282,13 +282,21 @@ export async function bootstrapHttps({ cookies, fetchImpl = globalThis.fetch } =
   if (pageRes.status === 401 || pageRes.status === 403) throw authError(pageRes.status);
   const html = await pageRes.text();
   let ctx = parseBootstrapFromHtml(html);
-  if (ctx?.backendAuthStatus && ctx.backendAuthStatus !== "authenticated") {
+  const authStatus = ctx?.backendAuthStatus;
+  if (authStatus && /unauth|signed.?out|logged.?out|anonymous/i.test(authStatus)) {
     throw authError(403);
   }
 
-  if (!ctx?.authToken) {
-    const tokenRes = await postApi(fetchImpl, "/api/hatch/token", cookies, {});
-    ctx = assignmentFromToken(jsonOrThrow(tokenRes, await readJson(tokenRes)));
+  if (!ctx?.authToken || (authStatus != null && authStatus !== "authenticated")) {
+    const tokenBody = ctx
+      ? {
+          vmAddress: ctx.gatewayUrl ?? `wss://${ctx.vmId}.metaaivm.com/`,
+          vmName: ctx.vmName ?? ctx.vmId,
+          force_refresh: true,
+        }
+      : {};
+    const tokenRes = await postApi(fetchImpl, "/api/hatch/token", cookies, tokenBody);
+    ctx = assignmentFromToken(jsonOrThrow(tokenRes, await readJson(tokenRes)), ctx);
   }
 
   if (!ctx?.vmId || !ctx?.authToken) {
