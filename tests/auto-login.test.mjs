@@ -3,6 +3,7 @@ import fs from "node:fs";
 import test from "node:test";
 import { addAccount, listAccounts, setStatus } from "../bridge/accounts.mjs";
 import {
+  createWebInboxOtpQuery,
   extractOtpFromImapFetch,
   loadCredentialsFromEnvCatalog,
   parseCredentialLines,
@@ -31,17 +32,44 @@ test("resolveImapHost maps common mailbox providers and custom domains", () => {
   assert.equal(resolveImapHost("example.org"), "imap.example.org");
 });
 
-test("parseCredentialLines parses mailbox suffix and skips comments", () => {
+test("parseCredentialLines parses mailbox suffix, web OTP blocks, and skips comments", () => {
   const input = [
     "# comment",
     "alice@mail.com PassOne mailbox: mail.com",
     "bob@gmx.com PassTwo",
+    "Email:",
+    "moon82@tuan89.site",
+    "OTP code : https://tuan89.site/inbox?email=moon82@tuan89.site",
     "-- trailing note in Russian",
   ].join("\n");
   assert.deepEqual(parseCredentialLines(input), [
     { email: "alice@mail.com", password: "PassOne", imapHost: "imap.mail.com" },
     { email: "bob@gmx.com", password: "PassTwo", imapHost: "imap.gmx.com" },
+    {
+      email: "moon82@tuan89.site",
+      password: "https://tuan89.site/inbox?email=moon82@tuan89.site",
+      imapHost: "tuan89.site",
+    },
   ]);
+});
+
+test("createWebInboxOtpQuery snapshots existing IDs and returns new OTP code", async () => {
+  let step = 0;
+  const query = createWebInboxOtpQuery("https://tuan89.site/inbox?email=moon82@tuan89.site", {
+    fetchImpl: async () => {
+      step += 1;
+      const messages =
+        step === 1
+          ? [{ id: 10, otp_code: "111111", subject: "Old code" }]
+          : [
+              { id: 11, otp_code: "654321", subject: "654321 is your login code" },
+              { id: 10, otp_code: "111111", subject: "Old code" },
+            ];
+      return { ok: true, status: 200, json: async () => ({ success: true, messages }) };
+    },
+  });
+  assert.deepEqual(await query({ user: "moon82@tuan89.site", minUid: 0 }), { maxUid: 1, code: null });
+  assert.deepEqual(await query({ user: "moon82@tuan89.site", minUid: 2 }), { maxUid: 2, code: "654321" });
 });
 
 test("extractOtpFromImapFetch picks newest OTP at or above minUid and ignores older UIDs", () => {

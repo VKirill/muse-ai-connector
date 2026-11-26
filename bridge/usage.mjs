@@ -8,10 +8,12 @@ const MUSE_ORIGIN = "https://muse.ai";
 const USAGE_URL = `${MUSE_ORIGIN}/`;
 const CHROME_UA =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36";
-export const DEFAULT_ACTION_ID = "40e0249eeae158685b6a8d0c3b203f53dd4f2c7d63";
+export const DEFAULT_ACTION_ID = "406cd44441421b58cea8309747129141947de9f499";
 const ACTION_BODY = '[{"includeAgreement":true}]';
 const CACHE_TTL_MS = 5 * 60 * 1000;
 const CHUNK_BATCH_SIZE = 8;
+const MAX_LAZY_HOPS = 3;
+const MAX_SCANNED_CHUNKS = 240;
 
 const usageCache = new Map();
 let rememberedActionId = null;
@@ -121,19 +123,22 @@ function extractSubscriptionActionId(js) {
 
 function extractLazyChunkUrls(js, dplSuffix) {
   const out = [];
-  for (const m of js.matchAll(/["']((?:\/_next\/)?static\/chunks\/[0-9a-zA-Z._-]+\.js)["']/g)) {
+  for (const m of js.matchAll(/["']((?:\/_next\/)?static\/(?:immutable\/)?chunks\/[0-9a-zA-Z._-]+\.js)["']/g)) {
     const raw = m[1].startsWith("/_next/") ? m[1] : `/_next/${m[1]}`;
-    out.push(`${MUSE_ORIGIN}${raw}${dplSuffix}`);
+    const suffix = raw.includes("/immutable/") ? "" : dplSuffix;
+    out.push(`${MUSE_ORIGIN}${raw}${suffix}`);
   }
   return out;
 }
 
 async function scanChunkUrls(fetchImpl, urls, visited, lazyOut, dplSuffix) {
-  const queue = urls.filter((u) => {
-    if (visited.has(u)) return false;
+  const queue = [];
+  for (const u of urls) {
+    if (visited.size >= MAX_SCANNED_CHUNKS) break;
+    if (visited.has(u)) continue;
     visited.add(u);
-    return true;
-  });
+    queue.push(u);
+  }
   for (let i = 0; i < queue.length; i += CHUNK_BATCH_SIZE) {
     const batch = queue.slice(i, i + CHUNK_BATCH_SIZE);
     const texts = await Promise.all(
@@ -182,10 +187,14 @@ async function discoverActionIdUncached(fetchImpl, cookies) {
   const dplSuffix = dplId ? `?dpl=${encodeURIComponent(dplId)}` : "";
 
   const visited = new Set();
-  const lazyUrls = [];
-  const directHit = await scanChunkUrls(fetchImpl, srcs, visited, lazyUrls, dplSuffix);
-  if (directHit) return directHit;
-  return scanChunkUrls(fetchImpl, lazyUrls, visited, null, dplSuffix);
+  let frontier = srcs;
+  for (let hop = 0; hop <= MAX_LAZY_HOPS && frontier.length > 0 && visited.size < MAX_SCANNED_CHUNKS; hop += 1) {
+    const nextLazy = hop < MAX_LAZY_HOPS ? [] : null;
+    const hit = await scanChunkUrls(fetchImpl, frontier, visited, nextLazy, dplSuffix);
+    if (hit) return hit;
+    frontier = nextLazy ?? [];
+  }
+  return null;
 }
 
 async function discoverActionId(fetchImpl, cookies) {

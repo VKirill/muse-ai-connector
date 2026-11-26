@@ -159,47 +159,56 @@ export async function collectMergedUsage(
   opts: { timeoutMs?: number } = {},
 ): Promise<MergedUsageAccount[]> {
   const timeoutMs = opts.timeoutMs ?? USAGE_TIMEOUT_MS;
-  type Group = { label: string; hosts: string[]; sourceHostId: string | null };
+  type Group = { label: string; hosts: string[]; sourceHostIds: string[] };
   const groups = new Map<string, Group>();
   for (const host of hosts) {
     if (!host.status) continue;
     for (const account of host.status.accounts) {
       let group = groups.get(account.id);
       if (!group) {
-        group = { label: account.label, hosts: [], sourceHostId: null };
+        group = { label: account.label, hosts: [], sourceHostIds: [] };
         groups.set(account.id, group);
       }
       if (!group.hosts.includes(host.hostId)) group.hosts.push(host.hostId);
-      if (!group.sourceHostId && host.connected && account.status === "signed_in") group.sourceHostId = host.hostId;
+      if (host.connected && account.status === "signed_in" && !group.sourceHostIds.includes(host.hostId)) {
+        group.sourceHostIds.push(host.hostId);
+      }
     }
   }
   return Promise.all(
     [...groups.entries()].map(async ([id, group]) => {
-      if (!group.sourceHostId) {
+      if (group.sourceHostIds.length === 0) {
         return { id, label: group.label, usage: null, error: null, hosts: group.hosts };
       }
-      try {
-        const result = await withTimeout(fetchUsage(group.sourceHostId, id), timeoutMs);
-        const row = result.accounts.find((a) => a.id === id) ?? result.accounts[0];
-        return {
-          id,
-          label: group.label,
-          usage: row?.usage ?? null,
-          error: row?.error ?? null,
-          hosts: group.hosts,
-        };
-      } catch (e) {
-        return {
-          id,
-          label: group.label,
-          usage: null,
-          error: {
+      let lastError: { code: string; message: string } | null = null;
+      for (const sourceHostId of group.sourceHostIds) {
+        try {
+          const result = await withTimeout(fetchUsage(sourceHostId, id), timeoutMs);
+          const row = result.accounts.find((a) => a.id === id) ?? result.accounts[0];
+          if (!row?.error) {
+            return {
+              id,
+              label: group.label,
+              usage: row?.usage ?? null,
+              error: null,
+              hosts: group.hosts,
+            };
+          }
+          lastError = row.error;
+        } catch (e) {
+          lastError = {
             code: e instanceof UsageTimeoutError ? "usage_timeout" : "usage_unavailable",
             message: e instanceof Error ? e.message : String(e),
-          },
-          hosts: group.hosts,
-        };
+          };
+        }
       }
+      return {
+        id,
+        label: group.label,
+        usage: null,
+        error: lastError,
+        hosts: group.hosts,
+      };
     }),
   );
 }

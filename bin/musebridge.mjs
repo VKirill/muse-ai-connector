@@ -800,9 +800,24 @@ export async function cmdAccountsAutoLogin(args, deps = {}) {
   const runOne = deps.autoLoginAccount ?? autoLoginAccount;
   const loadCatalog = deps.loadCredentialsFromEnvCatalog ?? loadCredentialsFromEnvCatalog;
   const hubSync = deps.syncBbHubAccounts ?? syncBbHubAccounts;
+  const refreshProfile = deps.refreshProfileAccount ?? (async (accId) => {
+    const session = await openSession({ accountId: accId, headless: !headed });
+    try {
+      const ok = await session.isSignedIn();
+      setStatus(accId, ok ? "signed_in" : "signed_out");
+      if (!ok) return null;
+      const cookies = typeof session.exportCookies === "function" ? await session.exportCookies() : [];
+      saveCookies(accId, cookies);
+      await syncIfTargets(accId);
+      return { id: accId, email: accId, ok: true, status: "refreshed_profile", cookiesCount: cookies.length };
+    } finally {
+      await session.close();
+    }
+  });
 
   /** @type {Array<{ accountId?: string, email: string, password: string, imapHost?: string }>} */
   const jobs = [];
+  const profileResults = [];
 
   if (batchSource) {
     const raw = batchSource === "-" ? await readStdin() : fs.readFileSync(batchSource, "utf8");
@@ -843,6 +858,19 @@ export async function cmdAccountsAutoLogin(args, deps = {}) {
         });
       }
     } else {
+      const nonEmailAccounts = all.filter((a) => !a.label.includes("@"));
+      for (const acc of nonEmailAccounts) {
+        if (Number.isInteger(maxParallel) && maxParallel >= 1) setMaxParallel(acc.id, maxParallel);
+        try {
+          const refreshed = await refreshProfile(acc.id);
+          if (refreshed) {
+            profileResults.push(refreshed);
+            if (!asJson) process.stdout.write(`${refreshed.id}\t${refreshed.status}\t${refreshed.cookiesCount} cookies\n`);
+          }
+        } catch {
+          /* non-email profile could not be refreshed headlessly */
+        }
+      }
       const emailAccounts = all.filter((a) => a.label.includes("@"));
       const catalog = await loadCatalog(
         emailAccounts.map((a) => a.label),
@@ -868,14 +896,18 @@ export async function cmdAccountsAutoLogin(args, deps = {}) {
         });
       }
       if (jobs.length === 0) {
-        if (asJson) process.stdout.write(`${JSON.stringify({ accounts: [], syncedHub: false }, null, 2)}\n`);
-        else process.stdout.write("All email accounts are already signed in (use --force to re-login).\n");
+        let syncedHub = false;
+        if (profileResults.length > 0) {
+          syncedHub = Boolean(await hubSync());
+        }
+        if (asJson) process.stdout.write(`${JSON.stringify({ accounts: profileResults, syncedHub }, null, 2)}\n`);
+        else if (profileResults.length === 0) process.stdout.write("All email accounts are already signed in (use --force to re-login).\n");
         return;
       }
     }
   }
 
-  const results = [];
+  const results = [...profileResults];
   let failed = 0;
   for (const job of jobs) {
     if (!job.password) {

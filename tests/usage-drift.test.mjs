@@ -153,3 +153,37 @@ test("discoverActionId follows lazy Turbopack modal chunks with dpl query param"
   assert.ok(seenUrls.includes("https://muse.ai/_next/static/chunks/lazy_modal.js?dpl=dpl_test123"));
   assert.equal(cachedId(ctx.cacheFile), NEW_ID);
 });
+
+test("discoverActionId follows multi-hop static/immutable/chunks without appending dpl", async () => {
+  const ctx = await freshBridge();
+  const seenUrls = [];
+  const fetchImpl = async (url, init = {}) => {
+    url = String(url);
+    seenUrls.push(url);
+    const action = init.headers && init.headers["Next-Action"];
+    if (action) {
+      return action === NEW_ID ? new Response(RSC, { status: 200 }) : new Response("Conflict", { status: 409 });
+    }
+    if (url.includes("sub_action.js")) {
+      return new Response(
+        `(0,t.createServerReference)("${NEW_ID}",t.callServer,void 0,t.findSourceMapURL,"fetchSubscriptionAction")`,
+        { status: 200 },
+      );
+    }
+    if (url.includes("settings_modal.js")) {
+      return new Response('e.v(t=>Promise.all(["static/immutable/chunks/sub_action.js"].map(t=>e.l(t))))', { status: 200 });
+    }
+    if (url.includes("entry.js")) {
+      return new Response('e.v(t=>Promise.all(["static/immutable/chunks/settings_modal.js"].map(t=>e.l(t))))', { status: 200 });
+    }
+    return new Response(
+      '<html data-dpl-id="dpl_test123"><script src="/_next/static/immutable/chunks/entry.js"></script></html>',
+      { status: 200 },
+    );
+  };
+  const usage = await ctx.mod.fetchAccountUsage({ cookies: COOKIES, fetchImpl, cache: false });
+  assert.equal(usage.percentUsed, 29);
+  assert.ok(seenUrls.includes("https://muse.ai/_next/static/immutable/chunks/settings_modal.js"));
+  assert.ok(seenUrls.includes("https://muse.ai/_next/static/immutable/chunks/sub_action.js"));
+  assert.equal(cachedId(ctx.cacheFile), NEW_ID);
+});

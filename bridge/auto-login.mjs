@@ -48,13 +48,21 @@ function codedError(code, message) {
   return err;
 }
 
+export function isWebInboxUrl(value) {
+  return /^https?:\/\//i.test(String(value || "").trim());
+}
+
 /**
  * Resolve an IMAP hostname from a mailbox hint ("mail.com", "imap.mail.com") or email address.
+ * For HTTP web OTP inbox URLs (e.g. tuan89.site), returns the URL host.
  * @param {string} [mailboxOrEmail]
  * @param {string} [fallbackEmail]
  * @returns {string}
  */
 export function resolveImapHost(mailboxOrEmail, fallbackEmail = "") {
+  if (isWebInboxUrl(mailboxOrEmail)) {
+    return new URL(String(mailboxOrEmail).trim()).host.toLowerCase();
+  }
   const raw = String(mailboxOrEmail || "").trim().toLowerCase();
   const domainFromEmail = String(fallbackEmail || "").includes("@")
     ? String(fallbackEmail).trim().toLowerCase().split("@").pop()
@@ -71,22 +79,58 @@ export function resolveImapHost(mailboxOrEmail, fallbackEmail = "") {
  * Parse batch credential lines such as:
  *   `user@mail.com MyPass123 mailbox: mail.com`
  *   `user@mail.com MyPass123`
+ *   `Email: user@tuan89.site` + `OTP Code: https://tuan89.site/inbox?email=user@tuan89.site`
  * Skips blank lines and `#` or `--` comments.
  * @param {string} text
  * @returns {Array<{ email: string, password: string, imapHost: string }>}
  */
 export function parseCredentialLines(text) {
   const out = [];
+  let pendingEmail = "";
   for (const rawLine of String(text ?? "").split(/\r?\n/)) {
     const line = rawLine.trim();
     if (!line || line.startsWith("#") || line.startsWith("--")) continue;
+    const emailOnlyMatch = line.match(/^email\s*:\s*([^\s]+@[^\s]+)$/i);
+    if (emailOnlyMatch) {
+      pendingEmail = emailOnlyMatch[1].trim();
+      continue;
+    }
+    if (/^email\s*:?$/i.test(line)) continue;
+    const otpUrlMatch = line.match(/^(?:otp(?:\s+code)?|inbox|url)\s*:\s*(https?:\/\/\S+)/i);
+    if (otpUrlMatch) {
+      const inboxUrl = otpUrlMatch[1].trim();
+      const urlEmail = (() => {
+        try {
+          return new URL(inboxUrl).searchParams.get("email")?.trim() || "";
+        } catch {
+          return "";
+        }
+      })();
+      const email = pendingEmail || urlEmail;
+      pendingEmail = "";
+      if (email && email.includes("@")) {
+        out.push({ email, password: inboxUrl, imapHost: resolveImapHost(inboxUrl, email) });
+      }
+      continue;
+    }
+    if (pendingEmail && /^https?:\/\/\S+$/i.test(line)) {
+      const email = pendingEmail;
+      pendingEmail = "";
+      out.push({ email, password: line, imapHost: resolveImapHost(line, email) });
+      continue;
+    }
+    if (!line.includes(" ") && line.includes("@") && !line.startsWith("http")) {
+      pendingEmail = line;
+      continue;
+    }
+    pendingEmail = "";
     const mailboxMatch = line.match(/\bmailbox:\s*([^\s]+)/i);
     const stripped = mailboxMatch ? line.slice(0, mailboxMatch.index).trim() : line;
     const parts = stripped.split(/\s+/);
     if (parts.length < 2 || !parts[0].includes("@")) continue;
     const email = parts[0].trim();
     const password = parts[1].trim();
-    const mailboxHint = mailboxMatch?.[1] ?? parts[2] ?? "";
+    const mailboxHint = isWebInboxUrl(password) ? password : (mailboxMatch?.[1] ?? parts[2] ?? "");
     out.push({
       email,
       password,
@@ -94,6 +138,57 @@ export function parseCredentialLines(text) {
     });
   }
   return out;
+}
+
+/**
+ * Build a stateful OTP query function for HTTP temp-mail web inboxes (e.g. `https://tuan89.site/inbox?email=...`).
+ * Snapshots existing message IDs when `minUid <= 0`, then returns the first new 6-8 digit code when `minUid >= 1`.
+ * @param {string} inboxUrl
+ * @param {{ fetchImpl?: typeof fetch }} [opts]
+ */
+export function createWebInboxOtpQuery(inboxUrl, { fetchImpl = globalThis.fetch } = {}) {
+  const origin = new URL(String(inboxUrl).trim()).origin;
+  const apiBase = `${origin}/api/temp-mail`;
+  const seenIds = new Set();
+
+  return async function queryWebInboxOtp({ user, minUid = 0 }) {
+    const res = await fetchImpl(`${apiBase}/inbox?email=${encodeURIComponent(user)}`);
+    const data = await res.json().catch(() => null);
+    if (!res.ok || !data || data.success === false) {
+      throw codedError("web_inbox_failed", `Web OTP inbox failed for ${user}: ${data?.message || res.status}`);
+    }
+    const messages = Array.isArray(data.messages) ? data.messages : [];
+    if (minUid <= 0) {
+      for (const m of messages) {
+        if (m?.id != null) seenIds.add(String(m.id));
+      }
+      return { maxUid: seenIds.size, code: null };
+    }
+    for (const m of messages) {
+      const id = m?.id != null ? String(m.id) : "";
+      if (id && seenIds.has(id)) continue;
+      const directOtp = String(m?.otp_code ?? "").trim();
+      if (/^\d{6,8}$/.test(directOtp)) {
+        return { maxUid: seenIds.size + 1, code: directOtp };
+      }
+      const subjMatch = String(m?.subject ?? "").match(/\b(\d{6,8})\b/);
+      if (subjMatch) {
+        return { maxUid: seenIds.size + 1, code: subjMatch[1] };
+      }
+      if (id) {
+        const detailRes = await fetchImpl(`${apiBase}/message?id=${encodeURIComponent(id)}&email=${encodeURIComponent(user)}`);
+        const detail = await detailRes.json().catch(() => null);
+        const bodyText = String(detail?.message?.text_body || detail?.message?.html_body || detail?.text || "")
+          .replace(/<style[\s\S]*?<\/style>/gi, " ")
+          .replace(/<[^>]+>/g, " ");
+        const bodyMatch = bodyText.match(/(?:Login|confirmation|security|confirm|sign[\s-]?up|verification)\s+code[\s:]*?(\d{6,8})\b/i) || bodyText.match(/\b(\d{6,8})\b/);
+        if (bodyMatch) {
+          return { maxUid: seenIds.size + 1, code: bodyMatch[1] };
+        }
+      }
+    }
+    return { maxUid: seenIds.size, code: null };
+  };
 }
 
 /**
@@ -278,12 +373,12 @@ export async function loadCredentialsFromEnvCatalog(emails, { exec = execFileP, 
       const access = detail?.access ?? detail;
       const username = String(access?.username ?? matchedEmail).trim();
       const key = username.toLowerCase();
-      const password = String(access?.password ?? "");
-      if (!password || map.has(key)) continue;
+      const rawSecret = String(access?.password || (isWebInboxUrl(access?.url) ? access.url : "") || "");
+      if (!rawSecret || map.has(key)) continue;
       map.set(key, {
         email: username,
-        password,
-        imapHost: resolveImapHost(access?.host || entry?.service || "", username),
+        password: rawSecret,
+        imapHost: resolveImapHost(isWebInboxUrl(rawSecret) ? rawSecret : (access?.host || entry?.service || ""), username),
       });
     } catch {
       /* skip unreadable entry */
@@ -312,7 +407,11 @@ async function inspectPageState(page) {
       const text = signedIn ? "" : (document.body?.innerText || "").slice(0, 2500);
       const iframes = signedIn ? [] : [...document.querySelectorAll("iframe")].map((f) => f.src || "");
       const hay = `${url}\n${title}\n${text}\n${iframes.join("\n")}`.toLowerCase();
-      const captcha = !signedIn && /captcha|recaptcha|hcaptcha|turnstile|arkose|funcaptcha|verify you are human/i.test(hay);
+      const captcha =
+        !signedIn &&
+        /captcha|recaptcha|hcaptcha|turnstile|arkose|funcaptcha|verify you(?: are|[’']re) human|confirm you(?: are|[’']re) human/i.test(
+          hay,
+        );
       return { signedIn, url, title, text, captcha };
     }, COMPOSER_SELECTOR);
   } catch {
@@ -363,12 +462,18 @@ export async function autoLoginAccount({
   if (!email || !email.includes("@")) throw codedError("invalid_email", `Valid email is required, got: ${email}`);
   if (!password) throw codedError("missing_password", `Mailbox password is required for ${email}`);
 
-  const resolvedImapHost = imapHost ? resolveImapHost(imapHost, email) : resolveImapHost("", email);
+  const resolvedImapHost = isWebInboxUrl(password)
+    ? resolveImapHost(password, email)
+    : imapHost
+      ? resolveImapHost(imapHost, email)
+      : resolveImapHost("", email);
   const account = accountId
     ? (listAccounts().find((a) => a.id === accountId) ?? ensureAccountForEmail(email, { maxParallel }))
     : ensureAccountForEmail(email, { maxParallel });
 
-  const queryOtp = deps.queryImapOtp ?? queryImapOtp;
+  const queryOtp =
+    deps.queryImapOtp ??
+    (isWebInboxUrl(password) ? createWebInboxOtpQuery(password, { fetchImpl: deps.fetchImpl }) : queryImapOtp);
   const launch =
     deps.launchPersistentContext ??
     ((dir, opts) => chromium.launchPersistentContext(dir, opts));
@@ -410,8 +515,11 @@ export async function autoLoginAccount({
       'input[type="email"], input[placeholder*="email" i], input[aria-label*="email" i], input[name*="email" i]';
 
     let emailSubmitted = false;
+    let suggestedClicked = false;
+    let heroToggleClicked = false;
     let savedCardClicked = false;
-    const stepDeadline = Date.now() + DEFAULT_STEP_TIMEOUT_MS;
+    const loopStartedAt = Date.now();
+    const stepDeadline = loopStartedAt + DEFAULT_STEP_TIMEOUT_MS;
 
     while (Date.now() < stepDeadline) {
       state = await inspectPageState(page);
@@ -425,9 +533,77 @@ export async function autoLoginAccount({
         await syncTargetsFn(account.id);
         return { id: account.id, email, status: "signed_in", cookiesCount: cookies.length };
       }
+      if (/isn[’']t available in your country|join the waitlist/i.test(state.text)) {
+        setStatus(account.id, "signed_out");
+        throw codedError(
+          "region_waitlist",
+          `Muse waitlist / region block for ${email}: Muse isn't available in this IP's country/region yet`,
+        );
+      }
 
       const codeInput = page.locator(codeSelector).first();
       if ((await codeInput.count()) > 0) break;
+
+      const onMuseLanding = /(?:^|\.)muse\.ai$/i.test(
+        (() => {
+          try {
+            return new URL(state.url).hostname;
+          } catch {
+            return "";
+          }
+        })(),
+      );
+
+      if (onMuseLanding && !suggestedClicked && !emailSubmitted) {
+        const suggestedBtn = page
+          .locator('button[aria-label*="Log in as" i], button[aria-label*="Sign up as" i], button[aria-label*="Continue as" i]')
+          .first();
+        if ((await suggestedBtn.count()) > 0) {
+          const aria = String((await suggestedBtn.getAttribute("aria-label").catch(() => "")) || "").toLowerCase();
+          if (!force && aria.includes(email.trim().toLowerCase())) {
+            suggestedClicked = true;
+            await suggestedBtn.click();
+            await sleep(3500);
+            continue;
+          }
+          const useAnother = page.locator("button, [role=button]").filter({ hasText: /Use another account/i }).first();
+          if ((await useAnother.count()) > 0) {
+            suggestedClicked = true;
+            await useAnother.click();
+            await sleep(2000);
+            continue;
+          }
+        }
+        const useAnother = page.locator("button, [role=button]").filter({ hasText: /Use another account/i }).first();
+        if ((await useAnother.count()) > 0) {
+          suggestedClicked = true;
+          await useAnother.click();
+          await sleep(2000);
+          continue;
+        }
+        // Give Muse's suggested-account modal ~2.5s to hydrate before clicking a generic Log in button.
+        if (!heroToggleClicked && Date.now() - loopStartedAt >= 2500) {
+          const heroLoginBtn = page
+            .locator("button, [role=button]")
+            .filter({ hasText: /^Continue with Meta$|^Log in to Muse$|^Log into Muse$|^Get started$|^Log in$|^Sign in$/i });
+          const loginCount = await heroLoginBtn.count();
+          if (loginCount > 0) {
+            let picked = heroLoginBtn.first();
+            for (let i = 0; i < loginCount; i += 1) {
+              const candidate = heroLoginBtn.nth(i);
+              const box = await candidate.boundingBox().catch(() => null);
+              if (box && box.y > 80 && box.y < 1200) {
+                picked = candidate;
+                break;
+              }
+            }
+            heroToggleClicked = true;
+            await picked.click();
+            await sleep(1500);
+            continue;
+          }
+        }
+      }
 
       if (!savedCardClicked && !emailSubmitted) {
         const metaCard = page.locator("button, [role=button]").filter({ hasText: /Meta Account/i }).first();

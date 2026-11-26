@@ -78,6 +78,21 @@ test("an account whose usage fails carries error and usage null", async () => {
   assert.deepEqual(rows[0].hosts, ["h1"]);
 });
 
+test("collectMergedUsage falls back to the next signed-in host when the first host returns an error", async () => {
+  const hosts = [hostEntry("h1"), hostEntry("h2")];
+  const seen = [];
+  const rows = await collectMergedUsage(hosts, async (hostId, id) => {
+    seen.push(hostId);
+    if (hostId === "h1") {
+      return { accounts: [{ id, usage: null, error: { code: "usage_unavailable", message: "Muse usage request failed (409)" } }] };
+    }
+    return { accounts: [{ id, usage: { plan: "Muse Free", percentUsed: 17 }, error: null }] };
+  });
+  assert.deepEqual(seen, ["h1", "h2"]);
+  assert.equal(rows[0].usage.percentUsed, 17);
+  assert.equal(rows[0].error, null);
+});
+
 test("package.json, package-lock.json and version.ts carry the same version", () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
   const lock = JSON.parse(fs.readFileSync(path.join(root, "package-lock.json"), "utf8"));
