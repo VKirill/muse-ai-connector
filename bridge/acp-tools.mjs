@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { listSkills, readSkill } from "./acp-skills.mjs";
+import { bbSkillIndex, readBbSkill } from "./bb-skills.mjs";
 
 const execFileP = promisify(execFile);
 
@@ -91,12 +92,17 @@ const LOCAL_TOOL_SCHEMAS = {
     inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
   },
   list_skills: {
-    description: "List skills installed on this machine; optional query filters name and description.",
+    description: "List skills on this machine and in BB; optional query filters name and description.",
     inputSchema: { type: "object", properties: { query: { type: "string" } } },
   },
   read_skill: {
-    description: "Read a skill's SKILL.md instructions by name (from list_skills).",
-    inputSchema: { type: "object", properties: { name: { type: "string" } }, required: ["name"] },
+    description:
+      "Read a skill's SKILL.md instructions by name (from list_skills); path reads another file of the skill, e.g. references/original.md.",
+    inputSchema: {
+      type: "object",
+      properties: { name: { type: "string" }, path: { type: "string" } },
+      required: ["name"],
+    },
   },
 };
 
@@ -359,7 +365,7 @@ Tools (paths are relative to the workspace; absolute paths inside it also work):
 - apply_patch {patch} — apply a unified diff to workspace files
 - bash {command, timeout_sec?} — run /bin/bash -lc in the workspace (default 120s, max 600s)
 - tool_schema {name} — input schema of any tool (use it before calling an mcp__ tool)
-- list_skills {query?} — find skills installed on this machine; read_skill {name} reads one
+- list_skills {query?} — find skills on this machine and in BB; read_skill {name, path?} reads one (path: a referenced file)
 
 Rules: paths outside the workspace are refused; edit_file fails when 'old' matches zero or
 several times; outputs are capped at ~8 KB per call and ~24 KB per message — read or grep
@@ -410,10 +416,13 @@ export async function runTool(name, args, ctx) {
       case "tool_schema":
         return { ok: true, output: toolSchema(args, ctx) };
       case "list_skills":
-        return { ok: true, output: cap(listSkills(ctx.cwd, args?.query)) };
+        return { ok: true, output: cap(await listAllSkills(ctx, args?.query)) };
       case "read_skill": {
-        const text = readSkill(ctx.cwd, args?.name);
-        if (text === null) throw toolError(`read_skill: skill not found: ${args?.name}`);
+        const rel = args?.path ? String(args.path) : "SKILL.md";
+        const text =
+          (rel === "SKILL.md" ? readSkill(ctx.cwd, args?.name) : null) ??
+          (await readBbSkill(String(args?.name ?? "").trim(), rel, ctx.bbSkills));
+        if (text === null) throw toolError(`read_skill: skill not found: ${args?.name}${rel === "SKILL.md" ? "" : ` (${rel})`}`);
         return { ok: true, output: cap(text) };
       }
       default:
@@ -423,6 +432,18 @@ export async function runTool(name, args, ctx) {
   } catch (err) {
     return { ok: false, output: cap(err?.message || String(err)) };
   }
+}
+
+async function listAllSkills(ctx, query) {
+  const local = listSkills(ctx.cwd, query);
+  const q = String(query ?? "").trim().toLowerCase();
+  const seen = new Set(local === "no skills found" ? [] : local.split("\n").map((row) => row.split(" — ")[0]));
+  const bb = (await bbSkillIndex(ctx.bbSkills))
+    .filter((s) => !seen.has(s.name) && (!q || `${s.name} ${s.description}`.toLowerCase().includes(q)))
+    .slice(0, 30)
+    .map((s) => `${s.name} — ${s.description}`.replace(/\s+—\s*$/, ""));
+  const rows = [...(local === "no skills found" ? [] : [local]), ...bb];
+  return rows.length ? rows.join("\n") : "no skills found";
 }
 
 function toolSchema(args, ctx) {
