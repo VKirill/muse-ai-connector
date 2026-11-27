@@ -15,7 +15,7 @@ import {
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
-import { isDeadAccountError, nextAfterDeadAccount } from "../bridge/account-health.mjs";
+import { isAuthRefused, isDeadAccountError, nextAfterDeadAccount } from "../bridge/account-health.mjs";
 import { cookiesPath, loadCookies, saveCookies } from "../bridge/cookies.mjs";
 import { updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome, profileDir } from "../bridge/paths.mjs";
@@ -582,19 +582,48 @@ async function cmdAccountsRemove(args) {
   process.stdout.write(`Removed ${id}${purge ? " (profile purged)" : ""}\n`);
 }
 
-async function cmdAccountsCheck(args) {
+/**
+ * Checks each account the way requests use it: with saved cookies on the API transport, a real
+ * bootstrap + gateway + ping (a Chrome profile can look signed in while the API session is dead).
+ * Without cookies, or on the browser transport, the Chrome profile is asked instead. Auth refused →
+ * signed_out; gateway dial refused → unknown; a transient failure leaves the status and prints `error`.
+ */
+export async function cmdAccountsCheck(args, deps = {}) {
   const id = args[0];
   const targets = id ? listAccounts().filter((a) => a.id === id) : listAccounts();
   if (id && targets.length === 0) {
     process.stderr.write(`Unknown account: ${id}\n`);
     process.exit(1);
   }
+  const createClient = deps.createMuseClient ?? (async (opts) => (await import("../bridge/protocol/api.mjs")).createMuseClient(opts));
+  const out = deps.stdout ?? process.stdout;
   for (const account of targets) {
-    await withSession({ accountId: account.id, headless: true }, async (session) => {
-      const signedIn = await session.isSignedIn();
-      setStatus(account.id, signedIn ? "signed_in" : "signed_out");
-      process.stdout.write(`${account.id}\t${signedIn ? "signed_in" : "signed_out"}\n`);
-    });
+    let signedIn;
+    if (resolveTransport({ env: process.env }) === "api" && fs.existsSync(cookiesPath(account.id))) {
+      let client;
+      try {
+        client = await createClient({ accountId: account.id });
+        signedIn = await client.isSignedIn();
+      } catch (err) {
+        if (!isDeadAccountError(err)) {
+          out.write(`${account.id}\terror\t${err?.message ?? err}\n`);
+          continue;
+        }
+        if (!isAuthRefused(err)) {
+          // Same rule as request rotation: a refused dial is `unknown`, used only when nothing else is free.
+          setStatus(account.id, "unknown");
+          out.write(`${account.id}\tunknown\t${err?.message ?? err}\n`);
+          continue;
+        }
+        signedIn = false;
+      } finally {
+        await client?.close?.().catch(() => {});
+      }
+    } else {
+      signedIn = await withSession({ accountId: account.id, headless: true }, (session) => session.isSignedIn());
+    }
+    setStatus(account.id, signedIn ? "signed_in" : "signed_out");
+    out.write(`${account.id}\t${signedIn ? "signed_in" : "signed_out"}\n`);
   }
 }
 
