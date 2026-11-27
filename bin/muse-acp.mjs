@@ -4,6 +4,7 @@ import fs from "node:fs";
 import path from "node:path";
 import readline from "node:readline";
 import { acquire, listAccounts, pickAccount, setStatus, touch } from "../bridge/accounts.mjs";
+import { isDeadAccountError, nextAfterDeadAccount } from "../bridge/account-health.mjs";
 import { waitForAssistantMessage, waitForPendingReply } from "../bridge/acp-pending.mjs";
 import { collectPrompt, extractBbContext } from "../bridge/acp-prompt.mjs";
 import { buildMcpIndex, callMcpTool, describeMcpTool, startMcpServers } from "../bridge/acp-mcp.mjs";
@@ -204,7 +205,14 @@ function landFakeReply(messages, reply) {
   }, FAKE_REPLY_LAG_MS).unref();
 }
 
-async function openFakeSession() {
+async function openFakeSession({ accountId } = {}) {
+  // Test hook: accounts listed here fail to open the way a dead Muse session does.
+  const dead = String(process.env.MUSE_BRIDGE_FAKE_DEAD ?? "").split(",").filter(Boolean);
+  if (dead.includes(accountId)) {
+    const err = new Error("Muse bootstrap failed (400)");
+    err.status = 400;
+    throw err;
+  }
   return {
     isSignedIn: async () => true,
     async history(chatId) {
@@ -296,16 +304,56 @@ async function openRealDriver(accountId) {
     apiClients.set(accountId, client);
     return { driver: client, ephemeral: false };
   } catch (err) {
-    if (err?.code !== "missing_cookies" && err?.code !== "auth_failed") throw err;
+    // A refused account is not retried through the browser: openWorkingAccount moves on.
+    if (err?.code !== "missing_cookies") throw err;
     process.stderr.write("API transport unavailable; falling back to browser\n");
-    if (err.code === "auth_failed") {
-      try {
-        setStatus(accountId, "signed_out");
-      } catch {
-        /* unregistered */
-      }
-    }
     return { driver: await openRealSession({ accountId, headless: HEADLESS }), ephemeral: true };
+  }
+}
+
+/**
+ * Locks and opens the session's account, verified by a ping. A dead account (auth
+ * refused, VM gateway unreachable) is taken out of rotation and the turn moves to the
+ * next account; the Muse chat of the dead account cannot be reached, so a new chat starts.
+ * @returns {Promise<{ release: () => void, opened: { driver: any, ephemeral: boolean } } | { cancelled: true } | { signedOut: string }>}
+ */
+async function openWorkingAccount(session) {
+  const tried = new Set();
+  for (;;) {
+    const accountId = session.accountId;
+    const release = await waitForLock(accountId, session);
+    let opened = null;
+    let failure;
+    try {
+      if (session.cancelled) {
+        release();
+        return { cancelled: true };
+      }
+      const known = listAccounts().some((a) => a.id === accountId);
+      if (known) touch(accountId);
+      opened = FAKE
+        ? { driver: await openFakeSession({ accountId, headless: HEADLESS }), ephemeral: true }
+        : await openRealDriver(accountId);
+      if (await opened.driver.isSignedIn()) {
+        if (known) setStatus(accountId, "signed_in");
+        return { release, opened };
+      }
+      failure = codedError("auth_failed", `Muse refused account ${accountId}`);
+    } catch (err) {
+      failure = err;
+    }
+    if (opened?.ephemeral) await opened.driver.close().catch(() => {});
+    release();
+    if (!isDeadAccountError(failure)) throw failure;
+    apiClients.delete(accountId);
+    const next = nextAfterDeadAccount(accountId, failure, tried);
+    process.stderr.write(`Muse account ${accountId} unusable (${shortCause(failure)})${next ? `; switching to ${next.id}` : ""}\n`);
+    if (!next) return { signedOut: accountId };
+    session.accountId = next.id;
+    session.museChatId = null;
+    session.pendingReply = null;
+    session.lastBbContext = null;
+    saveSession(session);
   }
 }
 
@@ -439,23 +487,16 @@ async function runPrompt(session, params) {
       }
       saveSession(session);
     }
-    const release = await waitForLock(session.accountId, session);
+    const held = await openWorkingAccount(session);
+    if (held.cancelled) return { stopReason: "cancelled" };
+    if (held.signedOut) {
+      update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `NonRetriableError: muse signed out: ${held.signedOut}` } });
+      return { stopReason: "end_turn" };
+    }
+    const { release, opened } = held;
     try {
-      if (session.cancelled) return { stopReason: "cancelled" };
-      if (listAccounts().some((a) => a.id === session.accountId)) touch(session.accountId);
-      const opened = FAKE
-        ? { driver: await openFakeSession({ accountId: session.accountId, headless: HEADLESS }), ephemeral: true }
-        : await openRealDriver(session.accountId);
       const driver = opened.driver;
       try {
-        const knownAccount = listAccounts().some((a) => a.id === session.accountId);
-        const signedIn = await driver.isSignedIn();
-        if (!signedIn) {
-          if (knownAccount) setStatus(session.accountId, "signed_out");
-          update(session.id, { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `NonRetriableError: muse signed out: ${session.accountId}` } });
-          return { stopReason: "end_turn" };
-        }
-        if (knownAccount) setStatus(session.accountId, "signed_in");
         if (session.pendingReply) {
           const pending = session.pendingReply;
           session.pendingReply = null;

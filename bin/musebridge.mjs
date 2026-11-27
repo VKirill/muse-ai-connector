@@ -15,6 +15,7 @@ import {
   setStatus,
   touch,
 } from "../bridge/accounts.mjs";
+import { isDeadAccountError, nextAfterDeadAccount } from "../bridge/account-health.mjs";
 import { cookiesPath, loadCookies, saveCookies } from "../bridge/cookies.mjs";
 import { updateJson } from "../bridge/json-file.mjs";
 import { bridgeHome, profileDir } from "../bridge/paths.mjs";
@@ -277,7 +278,11 @@ async function cmdHistory(args) {
   });
 }
 
-function openFakeImageTransport() {
+function openFakeImageTransport(accountId) {
+  // Test hook: accounts listed here fail to open the way a dead Muse session does.
+  if (String(process.env.MUSE_BRIDGE_FAKE_DEAD ?? "").split(",").includes(accountId)) {
+    throw Object.assign(new Error("Muse bootstrap failed (400)"), { status: 400 });
+  }
   const histPath = process.env.MUSE_BRIDGE_FAKE_HISTORY;
   const mediaPath = process.env.MUSE_BRIDGE_FAKE_MEDIA;
   const sentPath = process.env.MUSE_BRIDGE_FAKE_SENT;
@@ -336,12 +341,36 @@ async function cmdImage(args) {
     process.stderr.write(`Bad --timeout value: ${timeoutSec}\n`);
     process.exit(1);
   }
-  const accountId = accountFlag || pickAccount().id;
+  let accountId = accountFlag || pickAccount().id;
+  const tried = new Set();
+  for (;;) {
+    try {
+      await imageOnAccount(accountId);
+      return;
+    } catch (err) {
+      // Without --account a dead account is taken out of rotation and the next one is used.
+      if (accountFlag || !isDeadAccountError(err)) throw err;
+      const next = nextAfterDeadAccount(accountId, err, tried);
+      process.stderr.write(`Muse account ${accountId} unusable (${err.message})${next ? `; switching to ${next.id}` : ""}\n`);
+      if (!next) throw err;
+      accountId = next.id;
+    }
+  }
+
+  async function imageOnAccount(accountId) {
   const release = acquire(accountId, { owner: "musebridge-image" });
   try {
     touch(accountId);
     const run = async (session) => {
-      await requireSignedIn(session, accountId);
+      if (accountFlag) {
+        await requireSignedIn(session, accountId);
+      } else {
+        if (!(await session.isSignedIn())) throw Object.assign(new Error("Muse refused the account"), { code: "auth_failed" });
+        setStatus(accountId, "signed_in");
+      }
+      if (!accountFlag && transport !== "browser" && typeof session.fetchMedia !== "function") {
+        throw Object.assign(new Error("Muse API refused the account"), { code: "auth_failed" });
+      }
       if (typeof session.fetchMedia !== "function") {
         process.stderr.write("Image download needs the API transport.\n");
         process.exit(1);
@@ -378,7 +407,7 @@ async function cmdImage(args) {
       for (const img of saved) process.stdout.write(`${img.path}\n`);
     };
     if (process.env.MUSE_BRIDGE_FAKE === "1") {
-      const session = openFakeImageTransport();
+      const session = openFakeImageTransport(accountId);
       try {
         await run(session);
       } finally {
@@ -389,6 +418,7 @@ async function cmdImage(args) {
     await withTransport({ accountId, transport, headless: true }, run);
   } finally {
     release();
+  }
   }
 }
 

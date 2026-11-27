@@ -191,7 +191,13 @@ function contextFromFlightText(text) {
   ];
   const withAuth = candidates.filter((obj) => pick(obj, "authToken", "auth_token"));
   const withBoth = withAuth.filter((obj) => pick(obj, "gatewayUrl", "gateway_url"));
-  return withBoth[0] ?? withAuth[0] ?? candidates.find((obj) => pick(obj, "gatewayUrl", "gateway_url")) ?? null;
+  const withGateway = candidates.filter((obj) => pick(obj, "gatewayUrl", "gateway_url"));
+  return [...new Set([...withBoth, ...withAuth, ...withGateway])];
+}
+
+// window.__HATCH_GATEWAY_INIT__ carries the token but no vmId; its gateway host is the VM id.
+function vmIdFromGateway(url) {
+  return /^wss:\/\/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\.metaaivm\.com/i.exec(url ?? "")?.[1];
 }
 
 function pickVm(ctx) {
@@ -210,21 +216,21 @@ export function parseBootstrapFromHtml(html) {
   if (!html) return null;
   const chunks = flightChunks(html);
   const text = chunks.length > 0 ? chunks.join("\n") : String(html).replace(/\\"/g, '"');
-  const ctx = contextFromFlightText(text);
-  if (!ctx || typeof ctx !== "object") return null;
-  const authToken = pick(ctx, "authToken", "auth_token");
-  const vm = pickVm(ctx);
-  const vmId = vm?.vmId ?? pick(ctx, "vmId", "vm_id");
-  const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? vm?.gatewayUrl;
-  if (!vmId || !gatewayUrl) return null;
-  return {
-    vmId,
-    vmName: ctx.vmName ?? vm?.vmName,
-    gatewayUrl,
-    authToken,
-    notaryToken: pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken"),
-    backendAuthStatus: ctx.backendAuthStatus,
-  };
+  for (const ctx of contextFromFlightText(text)) {
+    const vm = pickVm(ctx);
+    const gatewayUrl = pick(ctx, "gatewayUrl", "gateway_url") ?? vm?.gatewayUrl;
+    const vmId = vm?.vmId ?? pick(ctx, "vmId", "vm_id") ?? vmIdFromGateway(gatewayUrl);
+    if (!vmId || !gatewayUrl) continue;
+    return {
+      vmId,
+      vmName: ctx.vmName ?? vm?.vmName,
+      gatewayUrl,
+      authToken: pick(ctx, "authToken", "auth_token"),
+      notaryToken: pick(ctx, "noiseNotaryToken", "notary_token", "notaryToken"),
+      backendAuthStatus: ctx.backendAuthStatus,
+    };
+  }
+  return null;
 }
 
 function cookieHdr(cookies) {
@@ -597,6 +603,10 @@ async function openSocket(url, socketFactory) {
     const [sendCipher, recvCipher] = await handshake(ws);
     return openTunnel(ws, sendCipher, recvCipher);
   } catch (err) {
+    // ws emits "closed before the connection was established" as an 'error' when a
+    // CONNECTING socket is closed; without a listener that crashes the process.
+    ws.on?.("error", () => {});
+    ws.addEventListener?.("error", () => {});
     try {
       ws.close();
     } catch {
